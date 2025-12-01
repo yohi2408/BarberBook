@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Button } from './Button';
 import { storageService } from '../services/storageService';
 import { User } from '../types';
-import { Scissors, Phone, User as UserIcon, Lock, type LucideIcon, Check } from 'lucide-react';
+import { Scissors, Phone, User as UserIcon, Lock, type LucideIcon, Check, Loader2 } from 'lucide-react';
 
 interface AuthProps {
   onLogin: (user: User) => void;
@@ -51,48 +51,45 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    // Simulate network
-    setTimeout(() => {
-      const cleanPhone = formData.phoneNumber.trim();
-      const cleanPassword = formData.password.trim();
+    const cleanPhone = formData.phoneNumber.trim();
+    const cleanPassword = formData.password.trim();
 
-      if (isLogin) {
-        // For login, 'cleanPhone' acts as the identifier (phone OR 'admin')
-        const user = storageService.login(cleanPhone, cleanPassword, rememberMe);
-        if (user) {
-          onLogin(user);
-        } else {
-          setError('פרטי הזדהות שגויים');
-        }
+    if (isLogin) {
+      // For login, 'cleanPhone' acts as the identifier (phone OR 'admin')
+      const user = await storageService.login(cleanPhone, cleanPassword, rememberMe);
+      if (user) {
+        onLogin(user);
       } else {
-        // Register validation
-        if (!cleanPhone.match(/^05\d-?\d{7}$/)) {
-          setError('אנא הזן מספר טלפון תקין (05X-XXXXXXX)');
-          setLoading(false);
-          return;
-        }
-        
-        const result = storageService.register({
-          password: cleanPassword,
-          fullName: formData.fullName,
-          phoneNumber: cleanPhone
-        });
-
-        if (result.success) {
-          // Auto login after register
-          const user = storageService.login(cleanPhone, cleanPassword, rememberMe);
-          if (user) onLogin(user);
-        } else {
-          setError(result.message || 'שגיאה בהרשמה');
-        }
+        setError('פרטי הזדהות שגויים');
       }
-      setLoading(false);
-    }, 800);
+    } else {
+      // Register validation
+      if (!cleanPhone.match(/^05\d-?\d{7}$/)) {
+        setError('אנא הזן מספר טלפון תקין (05X-XXXXXXX)');
+        setLoading(false);
+        return;
+      }
+      
+      const result = await storageService.register({
+        password: cleanPassword,
+        fullName: formData.fullName,
+        phoneNumber: cleanPhone
+      });
+
+      if (result.success) {
+        // Auto login after register
+        const user = await storageService.login(cleanPhone, cleanPassword, rememberMe);
+        if (user) onLogin(user);
+      } else {
+        setError(result.message || 'שגיאה בהרשמה');
+      }
+    }
+    setLoading(false);
   };
 
   return (
@@ -179,8 +176,8 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
               </div>
             )}
 
-            <Button type="submit" fullWidth disabled={loading}>
-              {loading ? 'טוען...' : (isLogin ? 'התחבר' : 'הירשם')}
+            <Button type="submit" fullWidth disabled={loading} className="flex items-center justify-center">
+              {loading ? <Loader2 className="animate-spin" /> : (isLogin ? 'התחבר' : 'הירשם')}
             </Button>
           </form>
           

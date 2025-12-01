@@ -1,165 +1,187 @@
+import { db } from '../firebaseConfig';
+import { 
+  collection, 
+  getDocs, 
+  addDoc, 
+  deleteDoc, 
+  doc, 
+  query, 
+  where, 
+  setDoc,
+  getDoc
+} from 'firebase/firestore';
 import { Appointment, BusinessSettings, DEFAULT_SETTINGS, User, UserRole } from '../types';
 
-const APPOINTMENTS_KEY = 'barber_appointments';
-const SETTINGS_KEY = 'barber_settings';
-const USERS_KEY = 'barber_users';
-const CURRENT_USER_KEY = 'barber_current_session';
+const APPOINTMENTS_COLLECTION = 'appointments';
+const SETTINGS_COLLECTION = 'settings';
+const USERS_COLLECTION = 'users';
+const SETTINGS_DOC_ID = 'business_settings';
 
-// Initialize or reset default admin
-const initStorage = () => {
-  try {
-    const usersStr = localStorage.getItem(USERS_KEY);
-    let users: User[] = usersStr ? JSON.parse(usersStr) : [];
-    
-    // Check for admin by role or special ID
-    const adminIndex = users.findIndex(u => u.role === UserRole.ADMIN);
-    
-    const defaultAdmin: User = {
-      id: 'admin-1',
-      password: 'admin123', // Fixed password
-      fullName: 'מנהל ראשי',
-      phoneNumber: '0500000000', // Default admin phone
-      role: UserRole.ADMIN
-    };
-
-    if (adminIndex !== -1) {
-      // Ensure admin details are correct (in case of schema change)
-      users[adminIndex] = { ...users[adminIndex], ...defaultAdmin };
-    } else {
-      users.push(defaultAdmin);
-    }
-    
-    // Save updated users list
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
-  } catch (e) {
-    console.error("Storage initialization failed", e);
-    const defaultAdmin: User = {
-      id: 'admin-1',
-      password: 'admin123',
-      fullName: 'מנהל ראשי',
-      phoneNumber: '0500000000',
-      role: UserRole.ADMIN
-    };
-    localStorage.setItem(USERS_KEY, JSON.stringify([defaultAdmin]));
-  }
-};
-
-initStorage();
+// Cache for current session
+let currentUserCache: User | null = null;
 
 export const storageService = {
   // Appointments
-  getAppointments: (): Appointment[] => {
+  getAppointments: async (): Promise<Appointment[]> => {
     try {
-      const data = localStorage.getItem(APPOINTMENTS_KEY);
-      return data ? JSON.parse(data) : [];
+      const querySnapshot = await getDocs(collection(db, APPOINTMENTS_COLLECTION));
+      return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Appointment));
     } catch (e) {
-      console.error("Failed to load appointments", e);
+      console.error("Error fetching appointments:", e);
       return [];
     }
   },
 
-  saveAppointment: (appointment: Appointment): boolean => {
-    const appointments = storageService.getAppointments();
-    
-    // Safety Check: Double booking prevention
-    const isTaken = appointments.some(a => 
-      a.date === appointment.date && 
-      a.time === appointment.time
-    );
+  saveAppointment: async (appointment: Appointment): Promise<boolean> => {
+    try {
+      // 1. Check for double booking in Cloud
+      const q = query(
+        collection(db, APPOINTMENTS_COLLECTION), 
+        where("date", "==", appointment.date),
+        where("time", "==", appointment.time)
+      );
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        return false; // Taken
+      }
 
-    if (isTaken) {
+      // 2. Save
+      // Remove 'id' if it exists, let Firestore generate one or use the one provided
+      const { id, ...data } = appointment;
+      await addDoc(collection(db, APPOINTMENTS_COLLECTION), data);
+      return true;
+    } catch (e) {
+      console.error("Error saving appointment:", e);
       return false;
     }
-
-    appointments.push(appointment);
-    localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(appointments));
-    return true;
   },
 
-  deleteAppointment: (id: string): void => {
-    const appointments = storageService.getAppointments();
-    const filtered = appointments.filter(a => a.id !== id);
-    localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(filtered));
+  deleteAppointment: async (id: string): Promise<void> => {
+    try {
+      await deleteDoc(doc(db, APPOINTMENTS_COLLECTION, id));
+    } catch (e) {
+      console.error("Error deleting appointment:", e);
+    }
   },
 
   // Settings
-  getSettings: (): BusinessSettings => {
+  getSettings: async (): Promise<BusinessSettings> => {
     try {
-      const data = localStorage.getItem(SETTINGS_KEY);
-      return data ? JSON.parse(data) : DEFAULT_SETTINGS;
+      const docRef = doc(db, SETTINGS_COLLECTION, SETTINGS_DOC_ID);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        return docSnap.data() as BusinessSettings;
+      } else {
+        // Initialize default settings in cloud if not exist
+        await setDoc(docRef, DEFAULT_SETTINGS);
+        return DEFAULT_SETTINGS;
+      }
     } catch (e) {
+      console.error("Error fetching settings:", e);
       return DEFAULT_SETTINGS;
     }
   },
 
-  saveSettings: (settings: BusinessSettings): void => {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  saveSettings: async (settings: BusinessSettings): Promise<void> => {
+    try {
+      await setDoc(doc(db, SETTINGS_COLLECTION, SETTINGS_DOC_ID), settings);
+    } catch (e) {
+      console.error("Error saving settings:", e);
+    }
   },
 
   // Auth
-  getUsers: (): User[] => {
-    const data = localStorage.getItem(USERS_KEY);
-    return data ? JSON.parse(data) : [];
-  },
-
-  register: (user: Omit<User, 'id' | 'role'>): { success: boolean, message?: string } => {
-    const users = storageService.getUsers();
-    
-    // Check if phone number is taken
-    if (users.some(u => u.phoneNumber === user.phoneNumber)) {
-      return { success: false, message: 'מספר טלפון זה כבר רשום במערכת' };
-    }
-
-    const newUser: User = {
-      ...user,
-      id: crypto.randomUUID(),
-      role: UserRole.CLIENT
-    };
-
-    users.push(newUser);
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
-    return { success: true };
-  },
-
-  login: (identifier: string, password: string, remember: boolean = false): User | null => {
-    const users = storageService.getUsers();
-    const cleanIdentifier = identifier.trim();
-    const cleanPassword = password.trim();
-    
-    // Allow login with "admin" keyword or phone number
-    const user = users.find(u => {
-      if (u.role === UserRole.ADMIN && cleanIdentifier.toLowerCase() === 'admin') {
-        return u.password === cleanPassword;
+  register: async (user: Omit<User, 'id' | 'role'>): Promise<{ success: boolean, message?: string }> => {
+    try {
+      // Check if phone exists
+      const q = query(collection(db, USERS_COLLECTION), where("phoneNumber", "==", user.phoneNumber));
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        return { success: false, message: 'מספר טלפון זה כבר רשום במערכת' };
       }
-      return u.phoneNumber === cleanIdentifier && u.password === cleanPassword;
-    });
 
-    if (user) {
-      // Save to requested storage
-      const storage = remember ? localStorage : sessionStorage;
-      storage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
-      
-      // Clean up the other storage to avoid conflicts
-      const otherStorage = remember ? sessionStorage : localStorage;
-      otherStorage.removeItem(CURRENT_USER_KEY);
-      
-      return user;
+      const newUser: User = {
+        ...user,
+        id: crypto.randomUUID(), // We can generate ID locally or let Firestore do it
+        role: UserRole.CLIENT
+      };
+
+      await addDoc(collection(db, USERS_COLLECTION), newUser);
+      return { success: true };
+    } catch (e) {
+      console.error("Register error:", e);
+      return { success: false, message: 'שגיאת רשת' };
     }
-    return null;
+  },
+
+  login: async (identifier: string, password: string, remember: boolean = false): Promise<User | null> => {
+    try {
+      const cleanIdentifier = identifier.trim();
+      const cleanPassword = password.trim();
+      
+      // Special Admin Check (Hardcoded for fallback, but ideally should be in DB)
+      if (cleanIdentifier === 'admin' && cleanPassword === 'admin123') {
+         const adminUser: User = { 
+           id: 'admin', 
+           fullName: 'מנהל ראשי', 
+           password: '', 
+           phoneNumber: '0000000000', 
+           role: UserRole.ADMIN 
+         };
+         currentUserCache = adminUser;
+         if (remember) localStorage.setItem('current_user', JSON.stringify(adminUser));
+         else sessionStorage.setItem('current_user', JSON.stringify(adminUser));
+         return adminUser;
+      }
+
+      // Query User by Phone
+      const q = query(collection(db, USERS_COLLECTION), where("phoneNumber", "==", cleanIdentifier));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) return null;
+
+      const userDoc = querySnapshot.docs[0];
+      const userData = userDoc.data() as User;
+
+      // Simple password check (Note: In production, hash passwords!)
+      if (userData.password === cleanPassword) {
+        const user = { ...userData, id: userDoc.id };
+        currentUserCache = user;
+        
+        const storage = remember ? localStorage : sessionStorage;
+        storage.setItem('current_user', JSON.stringify(user));
+        
+        return user;
+      }
+      return null;
+    } catch (e) {
+      console.error("Login error:", e);
+      return null;
+    }
   },
 
   logout: (): void => {
-    localStorage.removeItem(CURRENT_USER_KEY);
-    sessionStorage.removeItem(CURRENT_USER_KEY);
+    currentUserCache = null;
+    localStorage.removeItem('current_user');
+    sessionStorage.removeItem('current_user');
   },
 
   getCurrentUser: (): User | null => {
-    // Priority: 1. Session (active tab), 2. Local (remembered)
-    const sessionData = sessionStorage.getItem(CURRENT_USER_KEY);
-    if (sessionData) return JSON.parse(sessionData);
+    if (currentUserCache) return currentUserCache;
+    
+    const sessionData = sessionStorage.getItem('current_user');
+    if (sessionData) {
+      currentUserCache = JSON.parse(sessionData);
+      return currentUserCache;
+    }
 
-    const localData = localStorage.getItem(CURRENT_USER_KEY);
-    if (localData) return JSON.parse(localData);
+    const localData = localStorage.getItem('current_user');
+    if (localData) {
+      currentUserCache = JSON.parse(localData);
+      return currentUserCache;
+    }
 
     return null;
   }

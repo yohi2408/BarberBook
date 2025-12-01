@@ -1,40 +1,56 @@
 import React, { useEffect, useState } from 'react';
 import { storageService } from './services/storageService';
-import { Appointment, BusinessSettings, User, UserRole } from './types';
+import { Appointment, BusinessSettings, DEFAULT_SETTINGS, User, UserRole } from './types';
 import { Header } from './components/Header';
 import { ClientBooking } from './components/ClientBooking';
 import { AdminDashboard } from './components/AdminDashboard';
 import { Auth } from './components/Auth';
 import { Toast } from './components/Toast';
+import { Loader2 } from 'lucide-react';
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [settings, setSettings] = useState<BusinessSettings>(storageService.getSettings());
+  const [settings, setSettings] = useState<BusinessSettings>(DEFAULT_SETTINGS);
+  const [loading, setLoading] = useState(true);
   
   // Toast State
   const [toast, setToast] = useState({ visible: false, message: '', subMessage: '' });
 
   // Initial Load
   useEffect(() => {
-    const loadedAppointments = storageService.getAppointments();
-    setAppointments(loadedAppointments);
-    
-    const currentUser = storageService.getCurrentUser();
-    if (currentUser) {
-      setUser(currentUser);
-    }
+    const init = async () => {
+      const currentUser = storageService.getCurrentUser();
+      if (currentUser) {
+        setUser(currentUser);
+        // Load data from cloud
+        const [appts, sets] = await Promise.all([
+          storageService.getAppointments(),
+          storageService.getSettings()
+        ]);
+        setAppointments(appts);
+        setSettings(sets);
+      }
+      setLoading(false);
+    };
+    init();
   }, []);
 
   const showToast = (message: string, subMessage: string = '') => {
     setToast({ visible: true, message, subMessage });
   };
 
-  const handleLogin = (loggedInUser: User) => {
+  const handleLogin = async (loggedInUser: User) => {
+    setLoading(true);
     setUser(loggedInUser);
-    // Refresh data on login to ensure freshness
-    setAppointments(storageService.getAppointments());
-    setSettings(storageService.getSettings());
+    // Fetch fresh data from cloud on login
+    const [appts, sets] = await Promise.all([
+      storageService.getAppointments(),
+      storageService.getSettings()
+    ]);
+    setAppointments(appts);
+    setSettings(sets);
+    setLoading(false);
   };
 
   const handleLogout = () => {
@@ -42,28 +58,39 @@ function App() {
     setUser(null);
   };
 
-  const handleBooking = (appointment: Appointment): boolean => {
-    const success = storageService.saveAppointment(appointment);
+  const handleBooking = async (appointment: Appointment): Promise<boolean> => {
+    const success = await storageService.saveAppointment(appointment);
     if (success) {
-      setAppointments(prev => [...prev, appointment]);
+      // Refresh list from cloud to be sure
+      const updatedList = await storageService.getAppointments();
+      setAppointments(updatedList);
       return true;
     } else {
-      // If failed (collision), refresh the list so the user sees the taken slot
-      setAppointments(storageService.getAppointments());
+      const updatedList = await storageService.getAppointments();
+      setAppointments(updatedList);
       return false;
     }
   };
 
-  const handleCancelAppointment = (id: string) => {
-    storageService.deleteAppointment(id);
-    setAppointments(prev => prev.filter(a => a.id !== id));
+  const handleCancelAppointment = async (id: string) => {
+    await storageService.deleteAppointment(id);
+    const updatedList = await storageService.getAppointments();
+    setAppointments(updatedList);
     showToast('התור בוטל בהצלחה', 'הלקוח יקבל עדכון על הביטול');
   };
 
-  const handleUpdateSettings = (newSettings: BusinessSettings) => {
-    storageService.saveSettings(newSettings);
+  const handleUpdateSettings = async (newSettings: BusinessSettings) => {
+    await storageService.saveSettings(newSettings);
     setSettings(newSettings);
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-dark-900 flex items-center justify-center text-gold-500">
+        <Loader2 className="animate-spin" size={48} />
+      </div>
+    );
+  }
 
   // Auth View
   if (!user) {

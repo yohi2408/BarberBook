@@ -3,13 +3,13 @@ import { format, addDays, isSameDay } from 'date-fns';
 import he from 'date-fns/locale/he';
 import { Appointment, BusinessSettings, User } from '../types';
 import { Button } from './Button';
-import { Calendar, Clock, Loader2, Sparkles, ChevronRight, ChevronLeft, CalendarDays, History, Trash2, Share2 } from 'lucide-react';
+import { Calendar, Clock, Loader2, Sparkles, ChevronRight, ChevronLeft, CalendarDays, History, Trash2, CheckCircle } from 'lucide-react';
 
 interface ClientBookingProps {
   user: User;
   settings: BusinessSettings;
   existingAppointments: Appointment[];
-  onBook: (appointment: Appointment) => boolean;
+  onBook: (appointment: Appointment) => Promise<boolean>;
   onShowToast: (msg: string, sub: string) => void;
   onCancelAppointment: (id: string) => void;
 }
@@ -37,7 +37,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
   const [activeTab, setActiveTab] = useState<'book' | 'list'>('book');
   const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
-  const [step, setStep] = useState<1 | 2>(1); // 1 = Select, 2 = Confirm
+  const [step, setStep] = useState<1 | 2 | 3>(1); // 1 = Select, 2 = Confirm, 3 = Success
   const [loading, setLoading] = useState(false);
   
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -102,41 +102,72 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
     }
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!selectedTime) return;
 
     setLoading(true);
-    // Simulate network delay
-    setTimeout(() => {
-      const newAppointment: Appointment = {
-        id: crypto.randomUUID(),
-        customerName: user.fullName,
-        customerPhone: user.phoneNumber,
-        date: format(selectedDate, 'yyyy-MM-dd'),
-        time: selectedTime,
-        serviceType: 'תספורת גברים',
-        createdAt: Date.now()
-      };
-      
-      // Attempt to book
-      const success = onBook(newAppointment);
+    
+    const newAppointment: Appointment = {
+      id: crypto.randomUUID(), // Temp ID, storage might replace
+      customerName: user.fullName,
+      customerPhone: user.phoneNumber,
+      date: format(selectedDate, 'yyyy-MM-dd'),
+      time: selectedTime,
+      serviceType: 'תספורת גברים',
+      createdAt: Date.now()
+    };
+    
+    // Attempt to book (async)
+    const success = await onBook(newAppointment);
 
-      if (success) {
-        onShowToast('התור נקבע בהצלחה!', `נשלחה הודעת וואטסאפ ל-${user.phoneNumber}`);
-        // Reset
-        setStep(1);
-        setSelectedTime(null);
-        setActiveTab('list'); // Switch to list view to show the new appointment
-      } else {
-        // Handle race condition / double booking
-        onShowToast('שגיאה בקביעת התור', 'התור נתפס על ידי משתמש אחר ברגע זה. אנא בחר מועד אחר.');
-        setStep(1);
-        setSelectedTime(null);
-      }
-      setLoading(false);
-    }, 1500);
+    if (success) {
+      setStep(3); // Go to Success Screen
+    } else {
+      // Handle race condition / double booking
+      onShowToast('שגיאה בקביעת התור', 'התור נתפס על ידי משתמש אחר ברגע זה. אנא בחר מועד אחר.');
+      setStep(1);
+      setSelectedTime(null);
+    }
+    setLoading(false);
   };
 
+  const handleFinish = () => {
+    setStep(1);
+    setSelectedTime(null);
+    setActiveTab('list');
+  };
+
+  // --- RENDER ---
+
+  // 1. Success Screen
+  if (step === 3) {
+    return (
+      <div className="animate-in fade-in zoom-in duration-500 py-10 text-center">
+        <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-green-500/30">
+          <CheckCircle size={48} className="text-black" />
+        </div>
+        <h2 className="text-3xl font-black text-white mb-2">התור נקבע!</h2>
+        <p className="text-gray-400 mb-8">התור שלך נשמר בהצלחה במערכת</p>
+
+        <div className="bg-dark-800 p-6 rounded-2xl border border-white/10 max-w-sm mx-auto mb-8">
+           <div className="flex justify-between items-center border-b border-white/5 pb-4 mb-4">
+              <span className="text-gray-400">תאריך</span>
+              <span className="text-xl font-bold">{format(selectedDate, 'd/MM/yyyy')}</span>
+           </div>
+           <div className="flex justify-between items-center">
+              <span className="text-gray-400">שעה</span>
+              <span className="text-xl font-bold font-mono text-gold-500">{selectedTime}</span>
+           </div>
+        </div>
+
+        <Button onClick={handleFinish} fullWidth className="max-w-xs mx-auto">
+           סיים ומעבר לתורים שלי
+        </Button>
+      </div>
+    );
+  }
+
+  // 2. My Appointments List
   if (activeTab === 'list') {
     return (
        <div className="animate-in fade-in slide-in-from-right-8 duration-300">
@@ -173,7 +204,6 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
           ) : (
             myAppointments.map(appt => {
               const dateObj = parseDate(appt.date);
-              const waLink = `https://wa.me/?text=${encodeURIComponent(`היי, קבעתי תור ב-${settings.shopName} לתאריך ${format(dateObj, 'dd/MM/yyyy')} בשעה ${appt.time}`)}`;
               
               return (
                 <div key={appt.id} className="bg-dark-800 p-5 rounded-2xl border border-white/5 flex items-center gap-4 shadow-lg">
@@ -187,15 +217,6 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
                       <div className="text-xs text-gray-500 mt-1">{appt.serviceType}</div>
                    </div>
                    <div className="flex flex-col gap-2">
-                     <a 
-                       href={waLink}
-                       target="_blank"
-                       rel="noopener noreferrer"
-                       className="p-3 bg-green-500/10 text-green-500 rounded-xl hover:bg-green-500 hover:text-white transition-all flex items-center justify-center"
-                       title="שתף בוואטסאפ"
-                     >
-                       <Share2 size={20} />
-                     </a>
                      <button 
                        onClick={() => {
                           if (window.confirm('האם אתה בטוח שברצונך לבטל את התור?')) {
@@ -217,7 +238,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
     );
   }
 
-  // Booking Flow
+  // 3. Booking Confirmation
   if (step === 2) {
     return (
       <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
@@ -258,13 +279,9 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
               disabled={loading} 
               className="flex-[2] flex items-center justify-center gap-2"
             >
-              {loading ? <Loader2 className="animate-spin" /> : 'אשר ושלח וואטסאפ'}
+              {loading ? <Loader2 className="animate-spin" /> : 'אשר וקבע תור'}
             </Button>
           </div>
-          
-          <p className="text-center text-xs text-gray-500 mt-4">
-            בלחיצה על אישור תישלח הודעת וואטסאפ עם פרטי התור
-          </p>
         </div>
       </div>
     );
