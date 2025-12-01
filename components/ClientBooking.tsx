@@ -3,7 +3,7 @@ import { format, addDays, isSameDay } from 'date-fns';
 import he from 'date-fns/locale/he';
 import { Appointment, BusinessSettings, User } from '../types';
 import { Button } from './Button';
-import { Calendar, Clock, Loader2, Sparkles, ChevronRight, ChevronLeft, CalendarDays, History, Trash2 } from 'lucide-react';
+import { Calendar, Clock, Loader2, Sparkles, ChevronRight, ChevronLeft, CalendarDays, History, Trash2, Share2 } from 'lucide-react';
 
 interface ClientBookingProps {
   user: User;
@@ -14,7 +14,7 @@ interface ClientBookingProps {
   onCancelAppointment: (id: string) => void;
 }
 
-// Helpers to replace missing date-fns exports
+// Helpers
 const startOfDay = (date: Date) => {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
@@ -122,7 +122,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
       const success = onBook(newAppointment);
 
       if (success) {
-        onShowToast('התור נקבע בהצלחה!', `נשלח SMS אישור ל-${user.phoneNumber}`);
+        onShowToast('התור נקבע בהצלחה!', `נשלחה הודעת וואטסאפ ל-${user.phoneNumber}`);
         // Reset
         setStep(1);
         setSelectedTime(null);
@@ -173,6 +173,8 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
           ) : (
             myAppointments.map(appt => {
               const dateObj = parseDate(appt.date);
+              const waLink = `https://wa.me/?text=${encodeURIComponent(`היי, קבעתי תור ב-${settings.shopName} לתאריך ${format(dateObj, 'dd/MM/yyyy')} בשעה ${appt.time}`)}`;
+              
               return (
                 <div key={appt.id} className="bg-dark-800 p-5 rounded-2xl border border-white/5 flex items-center gap-4 shadow-lg">
                    <div className="bg-dark-700 p-3 rounded-xl text-center min-w-[70px]">
@@ -184,16 +186,28 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
                       <div className="text-2xl font-bold text-white font-mono">{appt.time}</div>
                       <div className="text-xs text-gray-500 mt-1">{appt.serviceType}</div>
                    </div>
-                   <button 
-                     onClick={() => {
-                        if (window.confirm('האם אתה בטוח שברצונך לבטל את התור?')) {
-                          onCancelAppointment(appt.id);
-                        }
-                     }}
-                     className="p-3 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all ml-2"
-                   >
-                     <Trash2 size={20} />
-                   </button>
+                   <div className="flex flex-col gap-2">
+                     <a 
+                       href={waLink}
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       className="p-3 bg-green-500/10 text-green-500 rounded-xl hover:bg-green-500 hover:text-white transition-all flex items-center justify-center"
+                       title="שתף בוואטסאפ"
+                     >
+                       <Share2 size={20} />
+                     </a>
+                     <button 
+                       onClick={() => {
+                          if (window.confirm('האם אתה בטוח שברצונך לבטל את התור?')) {
+                            onCancelAppointment(appt.id);
+                          }
+                       }}
+                       className="p-3 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all flex items-center justify-center"
+                       title="בטל תור"
+                     >
+                       <Trash2 size={20} />
+                     </button>
+                   </div>
                 </div>
               );
             })
@@ -244,12 +258,12 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
               disabled={loading} 
               className="flex-[2] flex items-center justify-center gap-2"
             >
-              {loading ? <Loader2 className="animate-spin" /> : 'אשר ושלח SMS'}
+              {loading ? <Loader2 className="animate-spin" /> : 'אשר ושלח וואטסאפ'}
             </Button>
           </div>
           
           <p className="text-center text-xs text-gray-500 mt-4">
-            בלחיצה על אישור יישלח מסרון עם פרטי התור
+            בלחיצה על אישור תישלח הודעת וואטסאפ עם פרטי התור
           </p>
         </div>
       </div>

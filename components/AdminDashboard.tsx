@@ -12,7 +12,7 @@ interface AdminDashboardProps {
   onUpdateSettings: (settings: BusinessSettings) => void;
 }
 
-// Helper to replace missing date-fns parse
+// Helper
 const parseDate = (dateStr: string) => {
   const [year, month, day] = dateStr.split('-').map(Number);
   return new Date(year, month - 1, day);
