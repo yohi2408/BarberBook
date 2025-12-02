@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { format, addDays, isSameDay, parseISO } from 'date-fns';
+import { format, addDays, isSameDay } from 'date-fns';
 import he from 'date-fns/locale/he';
 import { Appointment, BusinessSettings, User } from '../types';
 import { Button } from './Button';
-import { Calendar, Clock, Loader2, Sparkles, ChevronRight, ChevronLeft, CalendarDays, History, Trash2, CheckCircle, Clock as ClockIcon } from 'lucide-react';
+import { Calendar, Clock, Sparkles, ChevronRight, ChevronLeft, CalendarDays, History, Trash2, CheckCircle, Clock as ClockIcon } from 'lucide-react';
 
 interface ClientBookingProps {
   user: User;
@@ -18,6 +18,12 @@ const startOfDay = (date: Date) => {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
   return d;
+};
+
+// Helper to parse "YYYY-MM-DD" to local Date object
+const parseLocalDate = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
 };
 
 export const ClientBooking: React.FC<ClientBookingProps> = ({ 
@@ -40,7 +46,6 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
     return Array.from({ length: 14 }).map((_, i) => addDays(startOfDay(new Date()), i));
   }, []);
 
-  // Split appointments into Upcoming and History
   const { upcomingAppointments, historyAppointments } = useMemo(() => {
     const now = new Date();
     const userAppts = existingAppointments.filter(a => a.customerPhone === user.phoneNumber);
@@ -49,7 +54,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
     const history: Appointment[] = [];
 
     userAppts.forEach(appt => {
-        const apptDate = parseISO(appt.date);
+        const apptDate = parseLocalDate(appt.date);
         const [hours, minutes] = appt.time.split(':').map(Number);
         const apptDateTime = new Date(apptDate);
         apptDateTime.setHours(hours, minutes);
@@ -61,15 +66,8 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
         }
     });
 
-    // Sort upcoming ascending
-    upcoming.sort((a, b) => {
-        return new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime();
-    });
-
-    // Sort history descending
-    history.sort((a, b) => {
-        return new Date(`${b.date}T${b.time}`).getTime() - new Date(`${a.date}T${a.time}`).getTime();
-    });
+    upcoming.sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime());
+    history.sort((a, b) => new Date(`${b.date}T${b.time}`).getTime() - new Date(`${a.date}T${a.time}`).getTime());
 
     return { upcomingAppointments: upcoming, historyAppointments: history };
   }, [existingAppointments, user.phoneNumber]);
@@ -150,14 +148,15 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
 
   if (step === 3) {
     return (
-      <div className="animate-in fade-in zoom-in duration-500 py-10 text-center">
-        <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-green-500/30">
-          <CheckCircle size={48} className="text-black" />
+      <div className="animate-in fade-in zoom-in duration-500 py-16 text-center relative">
+        <div className="absolute inset-0 bg-green-500/10 blur-[100px] rounded-full pointer-events-none"></div>
+        <div className="w-28 h-28 bg-gradient-to-tr from-green-400 to-green-600 rounded-full flex items-center justify-center mx-auto mb-8 shadow-[0_0_50px_rgba(74,222,128,0.4)] animate-float">
+          <CheckCircle size={56} className="text-white" />
         </div>
-        <h2 className="text-3xl font-black text-white mb-2">התור נקבע!</h2>
-        <p className="text-gray-400 mb-8">התור שלך נשמר בהצלחה במערכת</p>
-        <Button onClick={handleFinish} fullWidth className="max-w-xs mx-auto">
-           סיים ומעבר לתורים שלי
+        <h2 className="text-4xl font-black text-white mb-3 tracking-tight">התור נקבע!</h2>
+        <p className="text-gray-400 mb-10 text-lg">מחכים לראותך במספרה</p>
+        <Button onClick={handleFinish} fullWidth className="max-w-xs mx-auto shadow-2xl">
+           סיום ומעבר לתורים שלי
         </Button>
       </div>
     );
@@ -166,41 +165,41 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
   if (activeTab === 'list') {
     return (
        <div className="animate-in fade-in slide-in-from-right-8 duration-300">
-        <div className="flex bg-dark-800 p-1 rounded-xl mb-6 border border-white/5">
-          <button onClick={() => setActiveTab('book')} className="flex-1 py-2 rounded-lg text-sm font-bold text-gray-400 hover:text-white">קביעת תור</button>
-          <button onClick={() => setActiveTab('list')} className="flex-1 py-2 rounded-lg text-sm font-bold bg-gold-500 text-black shadow-lg">התורים שלי</button>
+        <div className="glass p-1.5 rounded-2xl mb-8 flex gap-2">
+          <button onClick={() => setActiveTab('book')} className="flex-1 py-3 rounded-xl text-sm font-bold text-gray-400 hover:text-white transition-all hover:bg-white/5">קביעת תור</button>
+          <button onClick={() => setActiveTab('list')} className="flex-1 py-3 rounded-xl text-sm font-bold bg-white/10 text-white shadow-lg border border-white/10">התורים שלי</button>
         </div>
 
         {/* Upcoming Section */}
-        <div className="space-y-4 mb-8">
-          <h2 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
-            <CalendarDays size={20} className="text-gold-500" />
+        <div className="space-y-4 mb-10">
+          <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+            <CalendarDays size={22} className="text-gold-500" />
             תורים עתידיים
           </h2>
           
           {upcomingAppointments.length === 0 ? (
-            <div className="text-center py-8 bg-dark-800 rounded-2xl border border-white/5 border-dashed">
-              <p className="text-gray-400 text-sm">אין תורים עתידיים</p>
-              <Button variant="ghost" onClick={() => setActiveTab('book')} className="mt-2 text-gold-500 text-sm">קבע תור חדש</Button>
+            <div className="text-center py-16 glass-panel rounded-3xl border-dashed border-white/10">
+              <p className="text-gray-400 font-medium">אין תורים עתידיים</p>
+              <Button variant="outline" onClick={() => setActiveTab('book')} className="mt-4">קבע תור חדש</Button>
             </div>
           ) : (
             upcomingAppointments.map(appt => {
-              const dateObj = parseISO(appt.date);
+              const dateObj = parseLocalDate(appt.date);
               return (
-                <div key={appt.id} className="bg-dark-800 p-5 rounded-2xl border border-white/5 flex items-center gap-4 shadow-lg">
-                   <div className="bg-dark-700 p-3 rounded-xl text-center min-w-[70px]">
-                      <div className="text-xs text-gray-400">{format(dateObj, 'MMM', {locale: he})}</div>
-                      <div className="text-xl font-bold text-white">{format(dateObj, 'd')}</div>
+                <div key={appt.id} className="glass-panel p-5 rounded-3xl flex items-center gap-5 transition-transform hover:scale-[1.02] group">
+                   <div className="bg-black/30 p-4 rounded-2xl text-center min-w-[80px] border border-white/5 group-hover:border-gold-500/30 transition-colors">
+                      <div className="text-xs text-gray-400 font-medium">{format(dateObj, 'MMM', {locale: he})}</div>
+                      <div className="text-3xl font-black text-white">{format(dateObj, 'd')}</div>
                    </div>
                    <div className="flex-1">
-                      <div className="text-gold-500 text-sm font-bold mb-0.5">{format(dateObj, 'EEEE', {locale: he})}</div>
-                      <div className="text-2xl font-bold text-white font-mono">{appt.time}</div>
+                      <div className="text-gold-500 text-sm font-bold mb-1">{format(dateObj, 'EEEE', {locale: he})}</div>
+                      <div className="text-3xl font-bold text-white font-mono tracking-tight">{appt.time}</div>
                    </div>
                    <button 
                        onClick={() => { if (window.confirm('האם אתה בטוח?')) onCancelAppointment(appt.id); }}
-                       className="p-3 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500 hover:text-white"
+                       className="w-11 h-11 rounded-full bg-white/5 text-gray-400 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all border border-white/5"
                    >
-                       <Trash2 size={20} />
+                       <Trash2 size={18} />
                    </button>
                 </div>
               );
@@ -210,24 +209,24 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
 
         {/* History Section */}
         {historyAppointments.length > 0 && (
-            <div className="space-y-4">
-                <h2 className="text-lg font-bold text-gray-500 mb-2 flex items-center gap-2">
-                    <History size={20} />
+            <div className="space-y-4 opacity-70 hover:opacity-100 transition-opacity duration-300">
+                <h2 className="text-lg font-bold text-gray-500 mb-2 flex items-center gap-2 px-2 mt-8 border-t border-white/5 pt-8">
+                    <History size={18} />
                     היסטוריה
                 </h2>
                 {historyAppointments.map(appt => {
-                    const dateObj = parseISO(appt.date);
+                    const dateObj = parseLocalDate(appt.date);
                     return (
-                        <div key={appt.id} className="bg-dark-800/50 p-4 rounded-xl border border-white/5 flex items-center gap-4 grayscale opacity-70">
-                            <div className="bg-dark-900 p-2 rounded-lg text-center min-w-[60px]">
-                                <div className="text-lg font-bold text-gray-400">{format(dateObj, 'd')}</div>
+                        <div key={appt.id} className="glass p-4 rounded-2xl flex items-center gap-4 grayscale hover:grayscale-0 transition-all">
+                            <div className="bg-white/5 p-2 rounded-xl text-center min-w-[60px]">
+                                <div className="text-lg font-bold text-gray-300">{format(dateObj, 'd')}</div>
                                 <div className="text-[10px] text-gray-500">{format(dateObj, 'MMM', {locale: he})}</div>
                             </div>
                             <div className="flex-1">
                                 <div className="text-gray-400 text-sm font-bold">{format(dateObj, 'EEEE', {locale: he})}</div>
                                 <div className="text-lg font-bold text-gray-500 font-mono">{appt.time}</div>
                             </div>
-                            <div className="text-xs text-gray-600 bg-black/20 px-2 py-1 rounded">הושלם</div>
+                            <div className="text-[10px] font-bold text-green-500/70 border border-green-500/20 bg-green-500/5 px-3 py-1 rounded-full">הושלם</div>
                         </div>
                     );
                 })}
@@ -240,33 +239,47 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
   // Booking Confirmation Step
   if (step === 2) {
     return (
-      <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
-        <div className="bg-dark-800 p-8 rounded-3xl border border-white/5 mb-6 shadow-2xl relative overflow-hidden">
-          <div className="absolute -top-10 -right-10 w-32 h-32 bg-gold-500/10 rounded-full blur-3xl"></div>
-          <h2 className="text-2xl font-bold mb-6 flex items-center gap-3 text-white z-10 relative"><Sparkles className="text-gold-500" /> סיכום פרטים</h2>
+      <div className="animate-in fade-in slide-in-from-bottom-8 duration-500">
+        <div className="glass-panel p-8 rounded-[40px] mb-6 shadow-2xl relative overflow-hidden border-t border-white/20">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-gold-500/20 rounded-full blur-[80px] -mr-20 -mt-20"></div>
           
-          <div className="space-y-4 mb-8 relative z-10">
-            <div className="bg-dark-900/50 p-4 rounded-2xl border border-white/5 flex justify-between items-center">
-              <span className="text-gray-400">תאריך</span>
+          <div className="relative z-10 text-center mb-8">
+            <div className="w-16 h-16 bg-gold-500/20 rounded-full flex items-center justify-center mx-auto mb-4 text-gold-500 border border-gold-500/30">
+               <Sparkles size={28} className="animate-pulse" />
+            </div>
+            <h2 className="text-2xl font-black text-white">סיכום פרטים</h2>
+          </div>
+          
+          <div className="space-y-4 mb-10 relative z-10">
+            <div className="glass-input p-5 rounded-2xl flex justify-between items-center group hover:border-gold-500/30 transition-colors">
+              <div className="flex items-center gap-3">
+                 <Calendar className="text-gray-500 group-hover:text-gold-500 transition-colors" size={20} />
+                 <span className="text-gray-300 font-medium">תאריך</span>
+              </div>
               <span className="text-white font-bold text-lg">{format(selectedDate, 'EEEE d MMMM', { locale: he })}</span>
             </div>
-            <div className="bg-dark-900/50 p-4 rounded-2xl border border-white/5 flex justify-between items-center">
-              <span className="text-gray-400">שעה</span>
-              <span className="text-white font-bold text-lg font-mono">{selectedTime}</span>
+            
+            <div className="glass-input p-5 rounded-2xl flex justify-between items-center group hover:border-gold-500/30 transition-colors">
+              <div className="flex items-center gap-3">
+                 <Clock className="text-gray-500 group-hover:text-gold-500 transition-colors" size={20} />
+                 <span className="text-gray-300 font-medium">שעה</span>
+              </div>
+              <span className="text-gold-500 font-black text-2xl font-mono">{selectedTime}</span>
             </div>
-            <div className="bg-dark-900/50 p-4 rounded-2xl border border-white/5 flex justify-between items-center">
-              <span className="text-gray-400">לקוח</span>
+            
+            <div className="glass-input p-5 rounded-2xl flex justify-between items-center group hover:border-gold-500/30 transition-colors">
+              <span className="text-gray-300 font-medium">לקוח</span>
               <div className="text-right">
-                <div className="text-white font-bold">{user.fullName}</div>
-                <div className="text-xs text-gold-500">{user.phoneNumber}</div>
+                <div className="text-white font-bold text-lg">{user.fullName}</div>
+                <div className="text-xs text-gold-500/80 font-mono mt-0.5">{user.phoneNumber}</div>
               </div>
             </div>
           </div>
 
-          <div className="flex gap-3 relative z-10">
+          <div className="flex gap-4 relative z-10">
             <Button variant="secondary" onClick={() => setStep(1)} className="flex-1">חזרה</Button>
-            <Button onClick={handleConfirm} fullWidth disabled={loading} className="flex-[2] flex items-center justify-center gap-2">
-              {loading ? <Loader2 className="animate-spin" /> : 'אשר וקבע תור'}
+            <Button onClick={handleConfirm} fullWidth isLoading={loading} className="flex-[2]">
+              אשר וקבע תור
             </Button>
           </div>
         </div>
@@ -277,22 +290,23 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
   // Step 1: Booking Calendar
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-24">
-       <div className="flex bg-dark-800 p-1 rounded-xl mb-6 border border-white/5">
-          <button onClick={() => setActiveTab('book')} className="flex-1 py-2 rounded-lg text-sm font-bold bg-gold-500 text-black shadow-lg">קביעת תור</button>
-          <button onClick={() => setActiveTab('list')} className="flex-1 py-2 rounded-lg text-sm font-bold text-gray-400 hover:text-white">התורים שלי</button>
+       <div className="glass p-1.5 rounded-2xl mb-8 flex gap-2">
+          <button onClick={() => setActiveTab('book')} className="flex-1 py-3 rounded-xl text-sm font-bold bg-gold-500 text-black shadow-[0_0_20px_rgba(212,175,55,0.3)]">קביעת תור</button>
+          <button onClick={() => setActiveTab('list')} className="flex-1 py-3 rounded-xl text-sm font-bold text-gray-400 hover:text-white transition-all hover:bg-white/5">התורים שלי</button>
         </div>
 
-      <div className="relative">
-        <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><Calendar size={20} className="text-gold-500" /> בחר תאריך</h2>
+      <div className="relative group">
+        <h2 className="text-xl font-bold mb-5 flex items-center gap-2 px-2"><Calendar size={22} className="text-gold-500" /> בחר תאריך</h2>
         
-        <div className="absolute top-[60px] left-0 bottom-4 z-20 w-12 bg-gradient-to-r from-dark-900 via-dark-900/80 to-transparent flex items-center justify-start pointer-events-none">
-           <button onClick={() => handleScroll('left')} className="w-8 h-8 rounded-full bg-dark-700 text-white flex items-center justify-center pointer-events-auto hover:bg-gold-500 hover:text-black shadow-lg"><ChevronLeft size={20} /></button>
-        </div>
-        <div className="absolute top-[60px] right-0 bottom-4 z-20 w-12 bg-gradient-to-l from-dark-900 via-dark-900/80 to-transparent flex items-center justify-end pointer-events-none">
-           <button onClick={() => handleScroll('right')} className="w-8 h-8 rounded-full bg-dark-700 text-white flex items-center justify-center pointer-events-auto hover:bg-gold-500 hover:text-black shadow-lg"><ChevronRight size={20} /></button>
-        </div>
+        {/* Gradient Fades for Scroll */}
+        <div className="absolute top-[60px] left-0 bottom-4 z-20 w-12 bg-gradient-to-r from-[#050505] to-transparent pointer-events-none"></div>
+        <div className="absolute top-[60px] right-0 bottom-4 z-20 w-12 bg-gradient-to-l from-[#050505] to-transparent pointer-events-none"></div>
+        
+        {/* Scroll Buttons */}
+        <button onClick={() => handleScroll('left')} className="absolute top-[60%] -translate-y-1/2 left-0 z-30 w-8 h-8 rounded-full glass flex items-center justify-center text-white hover:bg-gold-500 hover:text-black transition-all -ml-2 opacity-0 group-hover:opacity-100"><ChevronLeft size={18} /></button>
+        <button onClick={() => handleScroll('right')} className="absolute top-[60%] -translate-y-1/2 right-0 z-30 w-8 h-8 rounded-full glass flex items-center justify-center text-white hover:bg-gold-500 hover:text-black transition-all -mr-2 opacity-0 group-hover:opacity-100"><ChevronRight size={18} /></button>
 
-        <div ref={scrollContainerRef} className="flex gap-3 overflow-x-auto pb-4 no-scrollbar -mx-4 px-12 snap-x scroll-smooth" style={{ direction: 'rtl' }}>
+        <div ref={scrollContainerRef} className="flex gap-3 overflow-x-auto pb-6 pt-2 no-scrollbar px-2 snap-x scroll-smooth" style={{ direction: 'rtl' }}>
           {days.map((day) => {
             const isSelected = isSameDay(day, selectedDate);
             const isTodayDate = isSameDay(day, startOfDay(new Date()));
@@ -300,11 +314,11 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
               <button
                 key={day.toISOString()}
                 onClick={() => { setSelectedDate(day); setSelectedTime(null); }}
-                className={`snap-center shrink-0 w-20 h-24 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all border-2 ${isSelected ? 'bg-gold-500 border-gold-500 text-black shadow-lg scale-105' : 'bg-dark-800 border-transparent text-gray-400 hover:bg-dark-700'}`}
+                className={`snap-center shrink-0 w-[80px] h-[100px] rounded-[22px] flex flex-col items-center justify-center gap-1 transition-all duration-300 border ${isSelected ? 'bg-gradient-to-b from-gold-400 to-gold-600 border-gold-400 text-black shadow-[0_0_25px_rgba(212,175,55,0.4)] scale-105 ring-2 ring-gold-500/20' : 'glass hover:bg-white/10 text-gray-400 hover:border-white/20'}`}
               >
-                <span className="text-xs font-medium">{isTodayDate ? 'היום' : format(day, 'EEEE', { locale: he })}</span>
-                <span className="text-2xl font-bold">{format(day, 'd')}</span>
-                <span className="text-xs opacity-75">{format(day, 'MMM', { locale: he })}</span>
+                <span className={`text-[11px] font-bold tracking-wider uppercase ${isSelected ? 'opacity-90' : 'opacity-60'}`}>{isTodayDate ? 'היום' : format(day, 'EEEE', { locale: he })}</span>
+                <span className={`text-3xl font-black ${isSelected ? 'text-black' : 'text-white'}`}>{format(day, 'd')}</span>
+                <span className={`text-[10px] font-medium ${isSelected ? 'opacity-90' : 'opacity-50'}`}>{format(day, 'MMM', { locale: he })}</span>
               </button>
             );
           })}
@@ -312,30 +326,33 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
       </div>
 
       <div>
-        <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><ClockIcon size={20} className="text-gold-500" /> בחר שעה</h2>
+        <h2 className="text-xl font-bold mb-5 flex items-center gap-2 px-2"><ClockIcon size={22} className="text-gold-500" /> בחר שעה</h2>
         {slots.length === 0 ? (
-          <div className="bg-dark-800 rounded-2xl p-8 text-center text-gray-500 border border-white/5 border-dashed">
+          <div className="glass-panel rounded-3xl p-12 text-center text-gray-500 border-dashed border-white/10">
             <p>אין תורים פנויים בתאריך זה</p>
           </div>
         ) : (
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 px-1">
             {slots.map((time) => (
               <button
                 key={time}
                 onClick={() => setSelectedTime(time)}
-                className={`py-3 rounded-xl font-medium transition-all border ${selectedTime === time ? 'bg-white text-black border-white shadow-lg scale-105' : 'bg-dark-800 text-gray-300 border-white/5 hover:bg-dark-700'}`}
+                className={`py-3.5 rounded-xl font-bold tracking-wider transition-all duration-300 border relative overflow-hidden group ${selectedTime === time ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.3)] scale-[1.02]' : 'glass text-gray-300 hover:bg-white/10 hover:border-white/30 hover:text-white'}`}
               >
-                {time}
+                <span className="relative z-10">{time}</span>
+                {selectedTime === time && <div className="absolute inset-0 bg-gradient-to-tr from-gray-200 to-white opacity-50"></div>}
               </button>
             ))}
           </div>
         )}
       </div>
 
-      <div className="fixed bottom-6 left-4 right-4 max-w-md mx-auto z-40">
-        <Button fullWidth disabled={!selectedTime} onClick={() => setStep(2)} className={`shadow-2xl transition-all duration-300 transform ${!selectedTime ? 'translate-y-20 opacity-0' : 'translate-y-0 opacity-100'}`}>
-          המשך לסיכום
-        </Button>
+      <div className="fixed bottom-6 left-4 right-4 max-w-md mx-auto z-40 pointer-events-none">
+        <div className={`transition-all duration-500 transform ${!selectedTime ? 'translate-y-24 opacity-0' : 'translate-y-0 opacity-100'} pointer-events-auto`}>
+            <Button fullWidth onClick={() => setStep(2)} className="shadow-2xl shadow-gold-500/20 py-4 text-lg">
+            המשך לסיכום
+            </Button>
+        </div>
       </div>
     </div>
   );
