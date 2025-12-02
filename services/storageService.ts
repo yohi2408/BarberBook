@@ -71,7 +71,12 @@ export const storageService = {
       const docRef = doc(db, SETTINGS_COLLECTION, SETTINGS_DOC_ID);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        return docSnap.data() as BusinessSettings;
+        const data = docSnap.data() as BusinessSettings;
+        // Migration: If schedule is missing (old data), return default or merge
+        if (!data.schedule) {
+            return { ...DEFAULT_SETTINGS, ...data, schedule: DEFAULT_SETTINGS.schedule };
+        }
+        return data;
       } else {
         // Initialize default settings in cloud if not exist
         await setDoc(docRef, DEFAULT_SETTINGS);

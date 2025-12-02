@@ -58,40 +58,50 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
       });
   }, [existingAppointments, user.phoneNumber]);
 
-  // Generate slots for selected date
+  // Generate slots for selected date based on specific day schedule
   const slots = useMemo(() => {
     const dayOfWeek = selectedDate.getDay(); // 0 = Sun
-    if (!settings.workDays.includes(dayOfWeek)) return [];
+    
+    // Safety check for legacy settings or missing days
+    const daySchedule = settings.schedule?.[dayOfWeek];
+
+    if (!daySchedule || !daySchedule.isWorking) return [];
 
     const generatedSlots: string[] = [];
-    const [startHour, startMin] = settings.workHours.start.split(':').map(Number);
-    const [endHour, endMin] = settings.workHours.end.split(':').map(Number);
     
-    let current = new Date(selectedDate);
-    current.setHours(startHour, startMin, 0, 0);
-    
-    const endTime = new Date(selectedDate);
-    endTime.setHours(endHour, endMin, 0, 0);
-
-    while (current < endTime) {
-      const timeString = format(current, 'HH:mm');
+    // Iterate over all time ranges (shifts) for this day
+    daySchedule.timeRanges.forEach(range => {
+      const [startHour, startMin] = range.start.split(':').map(Number);
+      const [endHour, endMin] = range.end.split(':').map(Number);
       
-      // Check if booked
-      const isBooked = existingAppointments.some(appt => 
-        appt.date === format(selectedDate, 'yyyy-MM-dd') && 
-        appt.time === timeString
-      );
+      let current = new Date(selectedDate);
+      current.setHours(startHour, startMin, 0, 0);
+      
+      const endTime = new Date(selectedDate);
+      endTime.setHours(endHour, endMin, 0, 0);
 
-      // Check if in past (if today)
-      const isPast = isSameDay(selectedDate, new Date()) && current < new Date();
+      while (current < endTime) {
+        const timeString = format(current, 'HH:mm');
+        
+        // Check if booked
+        const isBooked = existingAppointments.some(appt => 
+          appt.date === format(selectedDate, 'yyyy-MM-dd') && 
+          appt.time === timeString
+        );
 
-      if (!isBooked && !isPast) {
-        generatedSlots.push(timeString);
+        // Check if in past (if today)
+        const isPast = isSameDay(selectedDate, new Date()) && current < new Date();
+
+        if (!isBooked && !isPast) {
+          generatedSlots.push(timeString);
+        }
+
+        current = new Date(current.getTime() + settings.slotDurationMinutes * 60000);
       }
+    });
 
-      current = new Date(current.getTime() + settings.slotDurationMinutes * 60000);
-    }
-    return generatedSlots;
+    // Sort slots chronologically (in case ranges were out of order)
+    return generatedSlots.sort();
   }, [selectedDate, settings, existingAppointments]);
 
   const handleScroll = (direction: 'left' | 'right') => {
@@ -372,7 +382,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
         {slots.length === 0 ? (
           <div className="bg-dark-800 rounded-2xl p-8 text-center text-gray-500 border border-white/5 border-dashed">
             <p>אין תורים פנויים בתאריך זה</p>
-            <p className="text-sm mt-1">אנא בחר יום אחר</p>
+            <p className="text-sm mt-1">או שיום זה מוגדר כיום חופש</p>
           </div>
         ) : (
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Appointment, BusinessSettings } from '../types';
+import { Appointment, BusinessSettings, DaySchedule, TimeRange, DEFAULT_SETTINGS } from '../types';
 import { format, isPast, isToday, addDays } from 'date-fns';
 import he from 'date-fns/locale/he';
-import { Trash2, Settings, Calendar, Clock, Phone, User, Save, RefreshCw } from 'lucide-react';
+import { Trash2, Calendar, Clock, Phone, User, Save, RefreshCw, Plus, X } from 'lucide-react';
 import { Button } from './Button';
 
 interface AdminDashboardProps {
@@ -32,7 +32,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Sync props to state when settings change externally or on load
   useEffect(() => {
-    setTempSettings(settings);
+    // If we have legacy settings (missing schedule), merge with defaults to prevent crash
+    if (!settings.schedule) {
+       setTempSettings({ ...DEFAULT_SETTINGS, ...settings, schedule: DEFAULT_SETTINGS.schedule });
+    } else {
+       setTempSettings(settings);
+    }
   }, [settings]);
 
   // Group appointments by date
@@ -52,7 +57,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     e.preventDefault();
     setSaving(true);
     
-    // Simulate save delay for UI feedback
     setTimeout(() => {
         onUpdateSettings(tempSettings);
         setSaving(false);
@@ -60,17 +64,60 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }, 500);
   };
 
-  const toggleDay = (dayIndex: number) => {
-    let newDays;
-    if (tempSettings.workDays.includes(dayIndex)) {
-      newDays = tempSettings.workDays.filter(d => d !== dayIndex);
-    } else {
-      newDays = [...tempSettings.workDays, dayIndex];
-    }
-    // Sort days to keep them in order (Sunday to Saturday)
-    newDays.sort((a, b) => a - b);
+  // Day Schedule Helpers
+  const updateDayIsWorking = (dayIndex: number, isWorking: boolean) => {
+    setTempSettings(prev => ({
+      ...prev,
+      schedule: {
+        ...prev.schedule,
+        [dayIndex]: {
+          ...prev.schedule[dayIndex],
+          isWorking
+        }
+      }
+    }));
+  };
+
+  const addTimeRange = (dayIndex: number) => {
+    setTempSettings(prev => ({
+      ...prev,
+      schedule: {
+        ...prev.schedule,
+        [dayIndex]: {
+          ...prev.schedule[dayIndex],
+          timeRanges: [...prev.schedule[dayIndex].timeRanges, { start: "09:00", end: "17:00" }]
+        }
+      }
+    }));
+  };
+
+  const removeTimeRange = (dayIndex: number, rangeIndex: number) => {
+    setTempSettings(prev => ({
+      ...prev,
+      schedule: {
+        ...prev.schedule,
+        [dayIndex]: {
+          ...prev.schedule[dayIndex],
+          timeRanges: prev.schedule[dayIndex].timeRanges.filter((_, i) => i !== rangeIndex)
+        }
+      }
+    }));
+  };
+
+  const updateTimeRange = (dayIndex: number, rangeIndex: number, field: keyof TimeRange, value: string) => {
+    const newRanges = [...tempSettings.schedule[dayIndex].timeRanges];
+    newRanges[rangeIndex] = { ...newRanges[rangeIndex], [field]: value };
     
-    setTempSettings(prev => ({...prev, workDays: newDays}));
+    setTempSettings(prev => ({
+      ...prev,
+      schedule: {
+        ...prev.schedule,
+        [dayIndex]: {
+          ...prev.schedule[dayIndex],
+          timeRanges: newRanges
+        }
+      }
+    }));
   };
 
   return (
@@ -105,7 +152,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           ) : (
             Object.entries(groupedAppointments).map(([date, dayAppts]: [string, Appointment[]]) => {
               const dateObj = parseDate(date);
-              // Simple check for past dates, but keeping today's appointments visible even if time passed
               const isDatePast = isPast(addDaysToEndOfDay(dateObj)) && !isToday(dateObj); 
               
               if (isDatePast) return null;
@@ -154,37 +200,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="bg-dark-800 p-6 rounded-2xl border border-white/5 space-y-6">
             <h3 className="text-lg font-bold flex items-center gap-2 text-white">
               <Clock size={20} className="text-gold-500" />
-              שעות פעילות
+              הגדרת משך תור
             </h3>
             
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm text-gray-400 mb-1">שעת פתיחה</label>
-                <input 
-                  type="time" 
-                  value={tempSettings.workHours.start}
-                  onChange={e => setTempSettings({
-                    ...tempSettings, 
-                    workHours: { ...tempSettings.workHours, start: e.target.value }
-                  })}
-                  className="w-full bg-dark-900 border border-white/10 rounded-xl p-3 text-white focus:border-gold-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-400 mb-1">שעת סגירה</label>
-                <input 
-                  type="time" 
-                  value={tempSettings.workHours.end}
-                  onChange={e => setTempSettings({
-                    ...tempSettings, 
-                    workHours: { ...tempSettings.workHours, end: e.target.value }
-                  })}
-                  className="w-full bg-dark-900 border border-white/10 rounded-xl p-3 text-white focus:border-gold-500 outline-none"
-                />
-              </div>
-            </div>
-
-            <div>
+             <div>
               <label className="block text-sm text-gray-400 mb-1">משך תור (דקות)</label>
               <select 
                 value={tempSettings.slotDurationMinutes}
@@ -201,34 +220,77 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
-          <div className="bg-dark-800 p-6 rounded-2xl border border-white/5 space-y-4">
-            <h3 className="text-lg font-bold flex items-center gap-2 text-white">
+          <div className="space-y-4">
+             <h3 className="text-lg font-bold flex items-center gap-2 text-white px-2">
               <Calendar size={20} className="text-gold-500" />
-              ימי עבודה
+              שעות פעילות לפי ימים
             </h3>
-            <div className="flex flex-wrap gap-2">
-              {[0, 1, 2, 3, 4, 5, 6].map((day) => {
-                const isSelected = tempSettings.workDays.includes(day);
-                // Create a date for the day name to be localized
-                // Using a known Sunday (e.g., 2023-01-01) and adding days
-                const dayName = format(addDays(new Date(2023, 0, 1), day), 'EEEE', { locale: he });
-                
-                return (
-                  <button
-                    key={day}
-                    type="button"
-                    onClick={() => toggleDay(day)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                      isSelected 
-                        ? 'bg-gold-500 text-black shadow-lg shadow-gold-500/20' 
-                        : 'bg-dark-900 text-gray-400 border border-white/5 hover:border-white/20'
-                    }`}
-                  >
-                    {dayName}
-                  </button>
-                );
-              })}
-            </div>
+
+            {/* Loop through days 0-6 */}
+            {[0, 1, 2, 3, 4, 5, 6].map((dayIndex) => {
+              // Safety fallback if schedule not initialized
+              if (!tempSettings.schedule || !tempSettings.schedule[dayIndex]) return null;
+
+              const schedule = tempSettings.schedule[dayIndex];
+              const dayName = format(addDays(new Date(2023, 0, 1), dayIndex), 'EEEE', { locale: he });
+
+              return (
+                <div key={dayIndex} className="bg-dark-800 rounded-2xl border border-white/5 overflow-hidden">
+                  {/* Day Header */}
+                  <div className="bg-dark-700/30 p-4 flex justify-between items-center cursor-pointer" onClick={() => updateDayIsWorking(dayIndex, !schedule.isWorking)}>
+                     <div className="flex items-center gap-3">
+                        <div className={`w-10 h-6 rounded-full relative transition-colors ${schedule.isWorking ? 'bg-gold-500' : 'bg-gray-600'}`}>
+                           <div className={`absolute top-1 bottom-1 w-4 h-4 bg-white rounded-full transition-transform ${schedule.isWorking ? 'left-5' : 'left-1'}`}></div>
+                        </div>
+                        <span className={`font-bold ${schedule.isWorking ? 'text-white' : 'text-gray-500'}`}>{dayName}</span>
+                     </div>
+                     {!schedule.isWorking && <span className="text-xs text-gray-500">יום חופש</span>}
+                  </div>
+
+                  {/* Shift Configuration */}
+                  {schedule.isWorking && (
+                    <div className="p-4 space-y-3 bg-dark-900/20">
+                       {schedule.timeRanges.map((range, rangeIndex) => (
+                         <div key={rangeIndex} className="flex items-center gap-2">
+                            <input 
+                              type="time"
+                              value={range.start}
+                              onChange={(e) => updateTimeRange(dayIndex, rangeIndex, 'start', e.target.value)}
+                              className="bg-dark-900 border border-white/10 rounded-lg p-2 text-white text-sm focus:border-gold-500 outline-none"
+                            />
+                            <span className="text-gray-500">-</span>
+                            <input 
+                              type="time"
+                              value={range.end}
+                              onChange={(e) => updateTimeRange(dayIndex, rangeIndex, 'end', e.target.value)}
+                              className="bg-dark-900 border border-white/10 rounded-lg p-2 text-white text-sm focus:border-gold-500 outline-none"
+                            />
+                            
+                            {schedule.timeRanges.length > 1 && (
+                              <button 
+                                type="button" 
+                                onClick={() => removeTimeRange(dayIndex, rangeIndex)}
+                                className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg"
+                              >
+                                <X size={16} />
+                              </button>
+                            )}
+                         </div>
+                       ))}
+                       
+                       <button 
+                         type="button"
+                         onClick={() => addTimeRange(dayIndex)}
+                         className="text-xs text-gold-500 flex items-center gap-1 hover:underline mt-2"
+                       >
+                         <Plus size={12} />
+                         הוסף משמרת / הפסקה
+                       </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <Button type="submit" fullWidth disabled={saving} className="flex items-center justify-center gap-2">
