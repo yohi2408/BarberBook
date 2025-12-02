@@ -11,6 +11,8 @@ export default {
       },
       colors: {
         gold: {
+          300: '#F3E5AB',
+          400: '#E6C25B',
           500: '#D4AF37',
           600: '#AA8C2C',
         },

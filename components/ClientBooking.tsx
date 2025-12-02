@@ -3,7 +3,7 @@ import { format, addDays, isSameDay } from 'date-fns';
 import he from 'date-fns/locale/he';
 import { Appointment, BusinessSettings, User } from '../types';
 import { Button } from './Button';
-import { Calendar, Clock, Sparkles, ChevronRight, ChevronLeft, CalendarDays, History, Trash2, CheckCircle, Clock as ClockIcon } from 'lucide-react';
+import { Calendar, Sparkles, ChevronRight, ChevronLeft, CalendarDays, History, Trash2, CheckCircle, Clock as ClockIcon } from 'lucide-react';
 
 interface ClientBookingProps {
   user: User;
@@ -180,7 +180,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
           {upcomingAppointments.length === 0 ? (
             <div className="text-center py-16 glass-panel rounded-3xl border-dashed border-white/10">
               <p className="text-gray-400 font-medium">אין תורים עתידיים</p>
-              <Button variant="outline" onClick={() => setActiveTab('book')} className="mt-4">קבע תור חדש</Button>
+              <Button variant="outline" onClick={() => setActiveTab('book')} className="mt-4 mx-auto block">קבע תור חדש</Button>
             </div>
           ) : (
             upcomingAppointments.map(appt => {
@@ -261,7 +261,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
             
             <div className="glass-input p-5 rounded-2xl flex justify-between items-center group hover:border-gold-500/30 transition-colors">
               <div className="flex items-center gap-3">
-                 <Clock className="text-gray-500 group-hover:text-gold-500 transition-colors" size={20} />
+                 <ClockIcon className="text-gray-500 group-hover:text-gold-500 transition-colors" size={20} />
                  <span className="text-gray-300 font-medium">שעה</span>
               </div>
               <span className="text-gold-500 font-black text-2xl font-mono">{selectedTime}</span>
