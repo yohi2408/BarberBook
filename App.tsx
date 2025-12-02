@@ -6,6 +6,7 @@ import { ClientBooking } from './components/ClientBooking';
 import { AdminDashboard } from './components/AdminDashboard';
 import { Auth } from './components/Auth';
 import { Toast } from './components/Toast';
+import { InstallPWA } from './components/InstallPWA';
 import { Loader2 } from 'lucide-react';
 
 function App() {
@@ -132,6 +133,8 @@ function App() {
           />
         )}
       </main>
+      
+      <InstallPWA />
 
       {/* Footer */}
       <footer className="text-center py-8 text-dark-700 text-xs">
