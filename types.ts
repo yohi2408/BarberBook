@@ -35,6 +35,7 @@ export interface User {
   fullName: string;
   phoneNumber: string;
   role: UserRole;
+  recoveryPin?: string; // New field for password reset
 }
 
 export enum ViewMode {

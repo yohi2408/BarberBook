@@ -8,7 +8,8 @@ import {
   query, 
   where, 
   setDoc,
-  getDoc
+  getDoc,
+  updateDoc
 } from 'firebase/firestore';
 import { Appointment, BusinessSettings, DEFAULT_SETTINGS, User, UserRole } from '../types';
 
@@ -118,6 +119,30 @@ export const storageService = {
     } catch (e) {
       console.error("Register error:", e);
       return { success: false, message: 'שגיאת רשת' };
+    }
+  },
+
+  resetPassword: async (phoneNumber: string, recoveryPin: string, newPassword: string): Promise<{ success: boolean, message?: string }> => {
+    try {
+        const q = query(collection(db, USERS_COLLECTION), where("phoneNumber", "==", phoneNumber));
+        const querySnapshot = await getDocs(q);
+        
+        if (querySnapshot.empty) {
+            return { success: false, message: 'מספר טלפון לא נמצא' };
+        }
+
+        const userDoc = querySnapshot.docs[0];
+        const userData = userDoc.data() as User;
+
+        if (userData.recoveryPin !== recoveryPin) {
+            return { success: false, message: 'קוד שחזור שגוי' };
+        }
+
+        await updateDoc(doc(db, USERS_COLLECTION, userDoc.id), { password: newPassword });
+        return { success: true };
+    } catch (e) {
+        console.error("Reset password error:", e);
+        return { success: false, message: 'שגיאה באיפוס הסיסמא' };
     }
   },
 
