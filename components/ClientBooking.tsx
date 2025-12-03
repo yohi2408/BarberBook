@@ -1,9 +1,10 @@
+
 import React, { useState, useMemo, useRef } from 'react';
-import { format, addDays, isSameDay, addWeeks, isBefore } from 'date-fns';
+import { format, addDays, isSameDay, isBefore } from 'date-fns';
 import he from 'date-fns/locale/he';
 import { Appointment, BusinessSettings, User } from '../types';
 import { Button } from './Button';
-import { Calendar, Sparkles, ChevronRight, ChevronLeft, CalendarDays, History, Trash2, CheckCircle, Clock as ClockIcon } from 'lucide-react';
+import { Calendar, Sparkles, CalendarDays, History, Trash2, CheckCircle, Clock as ClockIcon } from 'lucide-react';
 
 interface ClientBookingProps {
   user: User;
@@ -30,8 +31,6 @@ const startOfWeek = (date: Date) => {
   return d;
 };
 
-const subWeeks = (date: Date, amount: number) => addWeeks(date, -amount);
-
 // Helper to parse "YYYY-MM-DD" to local Date object
 const parseLocalDate = (dateStr: string) => {
     const [year, month, day] = dateStr.split('-').map(Number);
@@ -48,8 +47,8 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'book' | 'list'>('book');
   
-  // Initialize view to the start of the current week (Sunday)
-  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => startOfWeek(new Date()));
+  // Always lock to the current week
+  const currentWeekStart = useMemo(() => startOfWeek(new Date()), []);
   const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -135,20 +134,6 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
     });
     return generatedSlots.sort();
   }, [selectedDate, settings, existingAppointments]);
-
-  const handleNextWeek = () => {
-      setCurrentWeekStart(prev => addWeeks(prev, 1));
-      setSelectedTime(null);
-  };
-
-  const handlePrevWeek = () => {
-      const newDate = subWeeks(currentWeekStart, 1);
-      // Prevent going back before the current real week
-      if (!isBefore(newDate, startOfWeek(new Date()))) {
-          setCurrentWeekStart(newDate);
-          setSelectedTime(null);
-      }
-  };
 
   const handleConfirm = async () => {
     if (!selectedTime) return;
@@ -339,13 +324,9 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
       <div className="relative group">
         <div className="flex justify-between items-center mb-5 px-2">
             <h2 className="text-xl font-bold flex items-center gap-2"><Calendar size={22} className="text-gold-500" /> בחר תאריך</h2>
-            <div className="text-xs font-mono text-gray-500 bg-white/5 px-2 py-1 rounded">{format(currentWeekStart, 'd MMM', {locale: he})} - {format(addDays(currentWeekStart, 6), 'd MMM', {locale: he})}</div>
+            <div className="text-xs font-mono text-gray-500 bg-white/5 px-2 py-1 rounded">השבוע הקרוב</div>
         </div>
         
-        {/* Navigation Arrows */}
-        <button onClick={handlePrevWeek} className="absolute top-[60%] -translate-y-1/2 left-0 z-30 w-8 h-8 rounded-full glass flex items-center justify-center text-white hover:bg-gold-500 hover:text-black transition-all -ml-2"><ChevronLeft size={18} /></button>
-        <button onClick={handleNextWeek} className="absolute top-[60%] -translate-y-1/2 right-0 z-30 w-8 h-8 rounded-full glass flex items-center justify-center text-white hover:bg-gold-500 hover:text-black transition-all -mr-2"><ChevronRight size={18} /></button>
-
         <div ref={scrollContainerRef} className="flex gap-3 overflow-x-auto pb-6 pt-2 no-scrollbar px-6 snap-x scroll-smooth justify-center" style={{ direction: 'rtl' }}>
           {displayedDays.length > 0 ? displayedDays.map((day) => {
             const isSelected = isSameDay(day, selectedDate);
@@ -362,7 +343,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
               </button>
             );
           }) : (
-             <div className="w-full text-center py-8 text-gray-500 text-sm">אין ימי קבלה פנויים בשבוע זה</div>
+             <div className="w-full text-center py-8 text-gray-500 text-sm">אין ימי קבלה פנויים להמשך שבוע זה</div>
           )}
         </div>
       </div>
