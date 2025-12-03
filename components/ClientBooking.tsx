@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { format, addDays, isSameDay } from 'date-fns';
+import { format, addDays, isSameDay, addWeeks, isBefore } from 'date-fns';
 import he from 'date-fns/locale/he';
 import { Appointment, BusinessSettings, User } from '../types';
 import { Button } from './Button';
@@ -14,11 +14,23 @@ interface ClientBookingProps {
   onCancelAppointment: (id: string) => void;
 }
 
+// Helpers to replace missing date-fns exports
 const startOfDay = (date: Date) => {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
   return d;
 };
+
+const startOfWeek = (date: Date) => {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay(); // 0 is Sunday
+  const diff = d.getDate() - day;
+  d.setDate(diff);
+  return d;
+};
+
+const subWeeks = (date: Date, amount: number) => addWeeks(date, -amount);
 
 // Helper to parse "YYYY-MM-DD" to local Date object
 const parseLocalDate = (dateStr: string) => {
@@ -35,6 +47,9 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
   onCancelAppointment
 }) => {
   const [activeTab, setActiveTab] = useState<'book' | 'list'>('book');
+  
+  // Initialize view to the start of the current week (Sunday)
+  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => startOfWeek(new Date()));
   const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -42,9 +57,23 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
   
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const days = useMemo(() => {
-    return Array.from({ length: 14 }).map((_, i) => addDays(startOfDay(new Date()), i));
-  }, []);
+  // Generate days for the current view week, filtering out past days and closed days
+  const displayedDays = useMemo(() => {
+    const today = startOfDay(new Date());
+    const weekDays = Array.from({ length: 7 }).map((_, i) => addDays(currentWeekStart, i));
+
+    return weekDays.filter(day => {
+        // 1. Filter out days in the past (before today)
+        if (isBefore(day, today)) return false;
+
+        // 2. Filter out non-working days based on settings
+        const dayOfWeek = day.getDay();
+        const schedule = settings.schedule?.[dayOfWeek];
+        if (!schedule || !schedule.isWorking) return false;
+
+        return true;
+    });
+  }, [currentWeekStart, settings]);
 
   const { upcomingAppointments, historyAppointments } = useMemo(() => {
     const now = new Date();
@@ -107,11 +136,18 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
     return generatedSlots.sort();
   }, [selectedDate, settings, existingAppointments]);
 
-  const handleScroll = (direction: 'left' | 'right') => {
-    if (scrollContainerRef.current) {
-      const scrollAmount = direction === 'left' ? -150 : 150;
-      scrollContainerRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
-    }
+  const handleNextWeek = () => {
+      setCurrentWeekStart(prev => addWeeks(prev, 1));
+      setSelectedTime(null);
+  };
+
+  const handlePrevWeek = () => {
+      const newDate = subWeeks(currentWeekStart, 1);
+      // Prevent going back before the current real week
+      if (!isBefore(newDate, startOfWeek(new Date()))) {
+          setCurrentWeekStart(newDate);
+          setSelectedTime(null);
+      }
   };
 
   const handleConfirm = async () => {
@@ -172,10 +208,15 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
 
         {/* Upcoming Section */}
         <div className="space-y-4 mb-10">
-          <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-            <CalendarDays size={22} className="text-gold-500" />
-            תורים עתידיים
-          </h2>
+          <div className="flex justify-between items-center mb-4">
+             <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <CalendarDays size={22} className="text-gold-500" />
+                תורים עתידיים
+            </h2>
+            <Button onClick={() => setActiveTab('book')} variant="primary" className="!py-2 !px-4 text-xs mx-auto block md:hidden">
+                קבע תור חדש
+            </Button>
+          </div>
           
           {upcomingAppointments.length === 0 ? (
             <div className="text-center py-16 glass-panel rounded-3xl border-dashed border-white/10">
@@ -296,32 +337,33 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
         </div>
 
       <div className="relative group">
-        <h2 className="text-xl font-bold mb-5 flex items-center gap-2 px-2"><Calendar size={22} className="text-gold-500" /> בחר תאריך</h2>
+        <div className="flex justify-between items-center mb-5 px-2">
+            <h2 className="text-xl font-bold flex items-center gap-2"><Calendar size={22} className="text-gold-500" /> בחר תאריך</h2>
+            <div className="text-xs font-mono text-gray-500 bg-white/5 px-2 py-1 rounded">{format(currentWeekStart, 'd MMM', {locale: he})} - {format(addDays(currentWeekStart, 6), 'd MMM', {locale: he})}</div>
+        </div>
         
-        {/* Gradient Fades for Scroll */}
-        <div className="absolute top-[60px] left-0 bottom-4 z-20 w-12 bg-gradient-to-r from-[#050505] to-transparent pointer-events-none"></div>
-        <div className="absolute top-[60px] right-0 bottom-4 z-20 w-12 bg-gradient-to-l from-[#050505] to-transparent pointer-events-none"></div>
-        
-        {/* Scroll Buttons */}
-        <button onClick={() => handleScroll('left')} className="absolute top-[60%] -translate-y-1/2 left-0 z-30 w-8 h-8 rounded-full glass flex items-center justify-center text-white hover:bg-gold-500 hover:text-black transition-all -ml-2 opacity-0 group-hover:opacity-100"><ChevronLeft size={18} /></button>
-        <button onClick={() => handleScroll('right')} className="absolute top-[60%] -translate-y-1/2 right-0 z-30 w-8 h-8 rounded-full glass flex items-center justify-center text-white hover:bg-gold-500 hover:text-black transition-all -mr-2 opacity-0 group-hover:opacity-100"><ChevronRight size={18} /></button>
+        {/* Navigation Arrows */}
+        <button onClick={handlePrevWeek} className="absolute top-[60%] -translate-y-1/2 left-0 z-30 w-8 h-8 rounded-full glass flex items-center justify-center text-white hover:bg-gold-500 hover:text-black transition-all -ml-2"><ChevronLeft size={18} /></button>
+        <button onClick={handleNextWeek} className="absolute top-[60%] -translate-y-1/2 right-0 z-30 w-8 h-8 rounded-full glass flex items-center justify-center text-white hover:bg-gold-500 hover:text-black transition-all -mr-2"><ChevronRight size={18} /></button>
 
-        <div ref={scrollContainerRef} className="flex gap-3 overflow-x-auto pb-6 pt-2 no-scrollbar px-2 snap-x scroll-smooth" style={{ direction: 'rtl' }}>
-          {days.map((day) => {
+        <div ref={scrollContainerRef} className="flex gap-3 overflow-x-auto pb-6 pt-2 no-scrollbar px-6 snap-x scroll-smooth justify-center" style={{ direction: 'rtl' }}>
+          {displayedDays.length > 0 ? displayedDays.map((day) => {
             const isSelected = isSameDay(day, selectedDate);
             const isTodayDate = isSameDay(day, startOfDay(new Date()));
             return (
               <button
                 key={day.toISOString()}
                 onClick={() => { setSelectedDate(day); setSelectedTime(null); }}
-                className={`snap-center shrink-0 w-[80px] h-[100px] rounded-[22px] flex flex-col items-center justify-center gap-1 transition-all duration-300 border ${isSelected ? 'bg-gradient-to-b from-gold-400 to-gold-600 border-gold-400 text-black shadow-[0_0_25px_rgba(212,175,55,0.4)] scale-105 ring-2 ring-gold-500/20' : 'glass hover:bg-white/10 text-gray-400 hover:border-white/20'}`}
+                className={`snap-center shrink-0 w-[80px] h-[100px] rounded-[22px] flex flex-col items-center justify-center gap-1 transition-all duration-300 border ${isSelected ? 'bg-gradient-to-b from-gold-300 to-gold-500 border-gold-400 text-black shadow-[0_0_25px_rgba(212,175,55,0.4)] scale-105 ring-2 ring-gold-500/20' : 'glass hover:bg-white/10 text-gray-400 hover:border-white/20'}`}
               >
                 <span className={`text-[11px] font-bold tracking-wider uppercase ${isSelected ? 'opacity-90' : 'opacity-60'}`}>{isTodayDate ? 'היום' : format(day, 'EEEE', { locale: he })}</span>
                 <span className={`text-3xl font-black ${isSelected ? 'text-black' : 'text-white'}`}>{format(day, 'd')}</span>
                 <span className={`text-[10px] font-medium ${isSelected ? 'opacity-90' : 'opacity-50'}`}>{format(day, 'MMM', { locale: he })}</span>
               </button>
             );
-          })}
+          }) : (
+             <div className="w-full text-center py-8 text-gray-500 text-sm">אין ימי קבלה פנויים בשבוע זה</div>
+          )}
         </div>
       </div>
 
