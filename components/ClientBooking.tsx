@@ -47,9 +47,22 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'book' | 'list'>('book');
   
-  // Always lock to the current week
-  const currentWeekStart = useMemo(() => startOfWeek(new Date()), []);
-  const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
+  // Logic: If today is Saturday (6), show Next Week. Otherwise, show Current Week.
+  const currentWeekStart = useMemo(() => {
+    const today = startOfDay(new Date());
+    if (today.getDay() === 6) { // Saturday
+       return addDays(today, 1); // Start from tomorrow (Sunday)
+    }
+    return startOfWeek(today); // Start from this week's Sunday
+  }, []);
+
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
+      const today = startOfDay(new Date());
+      // If it's saturday, default select Sunday (tomorrow)
+      if (today.getDay() === 6) return addDays(today, 1);
+      return today;
+  });
+
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [loading, setLoading] = useState(false);
@@ -59,10 +72,12 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
   // Generate days for the current view week, filtering out past days and closed days
   const displayedDays = useMemo(() => {
     const today = startOfDay(new Date());
+    // Create 7 days starting from the calculated week start
     const weekDays = Array.from({ length: 7 }).map((_, i) => addDays(currentWeekStart, i));
 
     return weekDays.filter(day => {
         // 1. Filter out days in the past (before today)
+        // Note: If today is Saturday, currentWeekStart is Sunday (tomorrow), so nothing is in the past.
         if (isBefore(day, today)) return false;
 
         // 2. Filter out non-working days based on settings
@@ -202,6 +217,10 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
                 קבע תור חדש
             </Button>
           </div>
+          
+          <Button onClick={() => setActiveTab('book')} variant="primary" className="!py-2 !px-4 text-xs mx-auto mb-6 hidden md:block">
+             קבע תור חדש
+          </Button>
           
           {upcomingAppointments.length === 0 ? (
             <div className="text-center py-16 glass-panel rounded-3xl border-dashed border-white/10">
