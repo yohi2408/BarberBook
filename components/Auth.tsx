@@ -1,10 +1,8 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Button } from './Button';
 import { storageService } from '../services/storageService';
 import { User } from '../types';
-import { Phone, User as UserIcon, ShieldCheck, ArrowRight, MessageSquare } from 'lucide-react';
-import { ConfirmationResult } from 'firebase/auth';
+import { Scissors, Phone, User as UserIcon, Lock, Check, KeyRound, ArrowRight } from 'lucide-react';
 
 interface AuthProps {
   onLogin: (user: User) => void;
@@ -16,8 +14,17 @@ const InputField = ({
   placeholder, 
   value, 
   onChange,
+  pattern,
   maxLength
-}: any) => (
+}: { 
+  icon: any, 
+  type: string, 
+  placeholder: string, 
+  value: string, 
+  onChange: (val: string) => void,
+  pattern?: string,
+  maxLength?: number
+}) => (
   <div className="relative group">
     <div className="absolute top-1/2 -translate-y-1/2 right-4 text-gray-500 group-focus-within:text-gold-500 transition-colors z-10">
       <Icon size={18} />
@@ -27,97 +34,97 @@ const InputField = ({
       required
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      pattern={pattern}
       maxLength={maxLength}
-      className="w-full glass-input rounded-xl py-4 pr-11 pl-4 text-sm font-medium focus:shadow-[0_0_15px_rgba(212,175,55,0.1)] outline-none text-right"
+      className="w-full glass-input rounded-xl py-4 pr-11 pl-4 text-sm font-medium focus:shadow-[0_0_15px_rgba(212,175,55,0.1)] outline-none"
       placeholder={placeholder}
-      dir="ltr" // Force LTR for numbers
     />
   </div>
 );
 
-type AuthStep = 'PHONE' | 'OTP' | 'PROFILE';
+type AuthView = 'login' | 'register' | 'forgot_password';
 
 export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
-  const [step, setStep] = useState<AuthStep>('PHONE');
-  const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState('');
-  const [fullName, setFullName] = useState('');
-  
-  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [view, setView] = useState<AuthView>('login');
+  const [formData, setFormData] = useState({
+    password: '',
+    fullName: '',
+    phoneNumber: '',
+    recoveryPin: '',
+    newPassword: ''
+  });
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    // Initialize ReCaptcha on mount
-    const verifier = storageService.initRecaptcha('recaptcha-container');
-    // @ts-ignore
-    window.recaptchaVerifier = verifier;
-  }, []);
-
-  const handleSendOtp = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
-
-    // @ts-ignore
-    const verifier = window.recaptchaVerifier;
-    
-    // Normalize phone for admin bypass or standard
-    if (phone === '0500000000') {
-         // Should be handled by real SMS in prod, but for tests:
-         // Using Firebase Test numbers is recommended instead of custom code logic here
-    }
-
-    const result = await storageService.sendOtp(phone, verifier);
-    
-    if (result.success && result.confirmationResult) {
-        setConfirmationResult(result.confirmationResult);
-        setStep('OTP');
-    } else {
-        setError(result.error || 'שגיאה בשליחת SMS. נסה שוב.');
-        // Reset recaptcha
-        // @ts-ignore
-        if(window.recaptchaVerifier) window.recaptchaVerifier.clear();
-    }
-    setLoading(false);
-  };
-
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
+    setSuccessMsg('');
     setLoading(true);
-    setError('');
 
-    if (!confirmationResult) return;
+    const cleanPhone = formData.phoneNumber.trim();
+    const cleanPassword = formData.password.trim();
+    const cleanPin = formData.recoveryPin.trim();
 
-    const result = await storageService.verifyOtp(confirmationResult, otp);
-    
-    if (result.success) {
-        if (result.isNewUser) {
-            setStep('PROFILE');
-        } else if (result.user) {
-            onLogin(result.user);
-        }
-    } else {
-        setError('קוד שגוי. נסה שנית');
-    }
-    setLoading(false);
-  };
-
-  const handleSaveProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    
-    const user = await storageService.createProfile(fullName);
-    if (user) {
+    if (view === 'login') {
+      const user = await storageService.login(cleanPhone, cleanPassword, rememberMe);
+      if (user) {
         onLogin(user);
-    } else {
-        setError('שגיאה ביצירת פרופיל');
+      } else {
+        setError('פרטי הזדהות שגויים');
+      }
+    } else if (view === 'register') {
+      if (!cleanPhone.match(/^05\d-?\d{7}$/)) {
+        setError('אנא הזן מספר טלפון תקין (05X-XXXXXXX)');
+        setLoading(false);
+        return;
+      }
+      if (!cleanPin.match(/^\d{4,6}$/)) {
+        setError('קוד השחזור חייב להכיל 4-6 ספרות');
+        setLoading(false);
+        return;
+      }
+      
+      const result = await storageService.register({
+        password: cleanPassword,
+        fullName: formData.fullName,
+        phoneNumber: cleanPhone,
+        recoveryPin: cleanPin
+      });
+
+      if (result.success) {
+        const user = await storageService.login(cleanPhone, cleanPassword, rememberMe);
+        if (user) onLogin(user);
+      } else {
+        setError(result.message || 'שגיאה בהרשמה');
+      }
+    } else if (view === 'forgot_password') {
+        if (!formData.newPassword || formData.newPassword.length < 4) {
+            setError('הסיסמא החדשה קצרה מדי');
+            setLoading(false);
+            return;
+        }
+
+        const result = await storageService.resetPassword(cleanPhone, cleanPin, formData.newPassword);
+        if (result.success) {
+            setSuccessMsg('הסיסמא שונתה בהצלחה! מעביר להתחברות...');
+            setTimeout(() => {
+                setView('login');
+                setFormData(prev => ({...prev, password: ''}));
+                setSuccessMsg('');
+            }, 2000);
+        } else {
+            setError(result.message || 'שגיאה באיפוס הסיסמא');
+        }
     }
     setLoading(false);
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden bg-dark-900">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden">
+        {/* Animated Background Elements */}
         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-gold-500/10 rounded-full blur-[120px] animate-float"></div>
         <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-500/10 rounded-full blur-[120px] animate-float" style={{animationDelay: '2s'}}></div>
 
@@ -126,92 +133,141 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
           <div className="relative inline-block">
              <div className="absolute inset-0 bg-gold-500/40 blur-xl rounded-full animate-pulse"></div>
              <div className="w-20 h-20 bg-gradient-to-br from-gold-400 to-gold-600 rounded-2xl flex items-center justify-center text-black mx-auto mb-6 shadow-2xl relative z-10 rotate-3 border border-white/20">
-                <ShieldCheck size={36} />
+                <Scissors size={36} />
              </div>
           </div>
           <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-400 tracking-tight mb-2 drop-shadow-sm">BarberBook Pro</h1>
           <p className="text-gray-400 text-sm font-medium tracking-wide uppercase opacity-70">
-             כניסה מאובטחת
+            {view === 'login' ? 'Welcome Back' : view === 'register' ? 'Create Account' : 'Reset Password'}
           </p>
         </div>
 
         <div className="glass-panel rounded-[32px] p-8 shadow-2xl animate-in fade-in zoom-in-95 duration-500 border-t border-white/20">
-          
-          {step === 'PHONE' && (
-             <form onSubmit={handleSendOtp} className="space-y-6">
-                <div className="text-center space-y-2 mb-6">
-                    <h3 className="text-white font-bold text-lg">הזדהות באמצעות SMS</h3>
-                    <p className="text-xs text-gray-400">הזן את מספר הטלפון שלך לקבלת קוד אימות</p>
-                </div>
-                
-                <InputField 
-                    icon={Phone}
-                    type="tel"
-                    placeholder="05X-XXXXXXX"
-                    value={phone}
-                    onChange={setPhone}
-                />
-                
-                <div id="recaptcha-container"></div>
-
-                <Button type="submit" fullWidth isLoading={loading} className="shadow-xl py-4">
-                    שלח קוד אימות
-                </Button>
-             </form>
-          )}
-
-          {step === 'OTP' && (
-             <form onSubmit={handleVerifyOtp} className="space-y-6 animate-in slide-in-from-right-8">
-                <div className="text-center space-y-2 mb-6">
-                    <h3 className="text-white font-bold text-lg">אימות קוד</h3>
-                    <p className="text-xs text-gray-400">הזן את הקוד שנשלח ל-{phone}</p>
-                </div>
-
-                <InputField 
-                    icon={MessageSquare}
-                    type="number"
-                    placeholder="123456"
-                    value={otp}
-                    onChange={setOtp}
-                    maxLength={6}
-                />
-
-                <Button type="submit" fullWidth isLoading={loading} className="shadow-xl py-4">
-                    אמת וכנס
-                </Button>
-                
-                <button type="button" onClick={() => setStep('PHONE')} className="text-xs text-gray-500 w-full text-center hover:text-white">
-                    שנה מספר טלפון
+          {view !== 'forgot_password' && (
+            <div className="flex mb-8 bg-black/40 p-1 rounded-xl relative border border-white/5">
+                <button
+                onClick={() => { setView('login'); setError(''); }}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 ${view === 'login' ? 'bg-white/10 text-white shadow-lg border border-white/10' : 'text-gray-500 hover:text-white'}`}
+                >
+                התחברות
                 </button>
-             </form>
-          )}
-
-          {step === 'PROFILE' && (
-             <form onSubmit={handleSaveProfile} className="space-y-6 animate-in slide-in-from-right-8">
-                 <div className="text-center space-y-2 mb-6">
-                    <h3 className="text-white font-bold text-lg">ברוך הבא!</h3>
-                    <p className="text-xs text-gray-400">רק עוד פרט אחד קטן וסיימנו</p>
-                </div>
-
-                <InputField 
-                    icon={UserIcon}
-                    type="text"
-                    placeholder="שם מלא"
-                    value={fullName}
-                    onChange={setFullName}
-                />
-
-                <Button type="submit" fullWidth isLoading={loading} className="shadow-xl py-4">
-                    סיים הרשמה
-                </Button>
-             </form>
-          )}
-
-          {error && (
-            <div className="mt-4 text-red-300 text-xs text-center bg-red-500/10 py-3 rounded-xl border border-red-500/20 font-medium animate-in fade-in">
-              {error}
+                <button
+                onClick={() => { setView('register'); setError(''); }}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 ${view === 'register' ? 'bg-white/10 text-white shadow-lg border border-white/10' : 'text-gray-500 hover:text-white'}`}
+                >
+                הרשמה
+                </button>
             </div>
           )}
+
+          {view === 'forgot_password' && (
+              <button 
+                onClick={() => { setView('login'); setError(''); }}
+                className="mb-6 text-xs text-gray-400 hover:text-white flex items-center gap-1 transition-colors"
+              >
+                  <ArrowRight size={14} />
+                  חזרה להתחברות
+              </button>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {view === 'register' && (
+              <InputField 
+                icon={UserIcon}
+                type="text"
+                placeholder="שם מלא"
+                value={formData.fullName}
+                onChange={v => setFormData({...formData, fullName: v})}
+              />
+            )}
+            
+            <InputField 
+              icon={Phone}
+              type="text"
+              placeholder={view === 'login' ? "מספר טלפון או admin" : "מספר טלפון (05X-XXXXXXX)"}
+              value={formData.phoneNumber}
+              onChange={v => setFormData({...formData, phoneNumber: v})}
+            />
+
+            {view !== 'forgot_password' && (
+                <InputField 
+                icon={Lock}
+                type="password"
+                placeholder="סיסמא"
+                value={formData.password}
+                onChange={v => setFormData({...formData, password: v})}
+                />
+            )}
+
+            {(view === 'register' || view === 'forgot_password') && (
+                <div className="space-y-1">
+                    <InputField 
+                        icon={KeyRound}
+                        type="text"
+                        placeholder="קוד שחזור (4-6 ספרות)"
+                        value={formData.recoveryPin}
+                        onChange={v => setFormData({...formData, recoveryPin: v.replace(/\D/g,'')})}
+                        pattern="\d{4,6}"
+                        maxLength={6}
+                    />
+                    {view === 'register' && <p className="text-[10px] text-gray-500 pr-2">קוד זה ישמש אותך לשחזור סיסמא אם תשכח אותה</p>}
+                </div>
+            )}
+
+            {view === 'forgot_password' && (
+                 <InputField 
+                 icon={Lock}
+                 type="password"
+                 placeholder="סיסמא חדשה"
+                 value={formData.newPassword}
+                 onChange={v => setFormData({...formData, newPassword: v})}
+               />
+            )}
+
+            {view === 'login' && (
+              <div className="flex items-center justify-between px-1 py-1">
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <div className="relative flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      className="peer h-4 w-4 cursor-pointer appearance-none rounded border border-white/20 bg-black/30 transition-all checked:border-gold-500 checked:bg-gold-500 hover:border-white/40"
+                    />
+                    <Check
+                      size={10}
+                      className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-black opacity-0 transition-opacity peer-checked:opacity-100"
+                    />
+                  </div>
+                  <span className="text-xs text-gray-400 select-none group-hover:text-white transition-colors">זכור אותי</span>
+                </label>
+
+                <button 
+                    type="button" 
+                    onClick={() => { setView('forgot_password'); setError(''); }}
+                    className="text-xs text-gold-500 hover:text-gold-400 transition-colors"
+                >
+                    שכחתי סיסמא?
+                </button>
+              </div>
+            )}
+
+            {error && (
+              <div className="text-red-300 text-xs text-center bg-red-500/10 py-3 rounded-xl border border-red-500/20 font-medium animate-in fade-in">
+                {error}
+              </div>
+            )}
+            
+            {successMsg && (
+              <div className="text-green-300 text-xs text-center bg-green-500/10 py-3 rounded-xl border border-green-500/20 font-medium animate-in fade-in">
+                {successMsg}
+              </div>
+            )}
+
+            <Button type="submit" fullWidth isLoading={loading} className="mt-4 shadow-xl shadow-gold-500/10 py-4">
+              {view === 'login' ? 'התחבר' : view === 'register' ? 'הרשם' : 'אפס סיסמא'}
+            </Button>
+          </form>
         </div>
       </div>
     </div>

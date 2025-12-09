@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Appointment, BusinessSettings, TimeRange, DEFAULT_SETTINGS, Service } from '../types';
 import { format, addDays } from 'date-fns';
 import he from 'date-fns/locale/he';
-import { Trash2, Calendar, Clock, Phone, User, Settings, Plus, X, Archive, History, Scissors, RefreshCcw } from 'lucide-react';
+import { Trash2, Calendar, Clock, Phone, User, Settings, Plus, X, Archive, History, Scissors, AlertTriangle } from 'lucide-react';
 import { Button } from './Button';
 
 interface AdminDashboardProps {
@@ -25,20 +25,63 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onCancelAppointment, 
   onUpdateSettings 
 }) => {
-  const [activeTab, setActiveTab] = useState<'appointments' | 'services' | 'settings'>('appointments');
+  const [activeTab, setActiveTab] = useState<'appointments' | 'settings' | 'services'>('appointments');
   const [showHistory, setShowHistory] = useState(false);
   
   const [tempSettings, setTempSettings] = useState<BusinessSettings>(settings);
   const [saving, setSaving] = useState(false);
-  const [newService, setNewService] = useState<Service>({ id: '', name: '', durationMinutes: 30, price: 0 });
 
+  // New Service State
+  const [newService, setNewService] = useState<Partial<Service>>({ name: '', duration: 30, price: 0 });
+
+  // Sync settings and handle migration
   useEffect(() => {
-    if (!settings.schedule) {
-       setTempSettings({ ...DEFAULT_SETTINGS, ...settings, schedule: DEFAULT_SETTINGS.schedule });
-    } else {
-       setTempSettings(settings);
-    }
+    setTempSettings(prev => ({
+       ...DEFAULT_SETTINGS,
+       ...settings,
+       schedule: settings.schedule || DEFAULT_SETTINGS.schedule,
+       services: settings.services || DEFAULT_SETTINGS.services
+    }));
   }, [settings]);
+
+  // --- AUTOMATIC RESET LOGIC ---
+  useEffect(() => {
+    const checkAutoReset = async () => {
+        const now = new Date();
+        const day = now.getDay(); // 5 = Friday, 6 = Saturday
+        const hour = now.getHours();
+        const todayStr = format(now, 'yyyy-MM-dd');
+
+        // Logic: If it is Friday after 20:00 OR Saturday
+        if ((day === 5 && hour >= 20) || day === 6) {
+            // Check if we already reset for this specific date/weekend
+            if (settings.lastResetDate !== todayStr) {
+                // RESET SCHEDULE
+                const resetSchedule = { ...settings.schedule };
+                Object.keys(resetSchedule).forEach(key => {
+                    const k = Number(key);
+                    resetSchedule[k] = { ...resetSchedule[k], isWorking: false };
+                });
+
+                const newSettings: BusinessSettings = {
+                    ...settings,
+                    schedule: resetSchedule,
+                    lastResetDate: todayStr
+                };
+
+                // Update state and parent
+                setTempSettings(newSettings);
+                onUpdateSettings(newSettings);
+                alert('הודעה למערכת: כיוון שהגיע סוף השבוע, היומן אופס אוטומטית (כל הימים נסגרו) כדי שתוכל להגדיר את השבוע הקרוב.');
+            }
+        }
+    };
+    
+    // Only run if settings are loaded
+    if (settings.shopName) {
+        checkAutoReset();
+    }
+  }, [settings.lastResetDate, settings.shopName]); // Run when settings load
 
   const now = new Date();
   
@@ -67,28 +110,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return acc;
     }, {} as Record<string, Appointment[]>);
 
-  const handleSaveSettings = (e?: React.FormEvent) => {
-    if(e) e.preventDefault();
+  const handleSaveSettings = (e: React.FormEvent) => {
+    e.preventDefault();
     setSaving(true);
     setTimeout(() => {
         onUpdateSettings(tempSettings);
         setSaving(false);
         alert('הגדרות נשמרו בהצלחה');
     }, 500);
-  };
-
-  const handleResetSchedule = () => {
-      if (window.confirm("האם אתה בטוח שברצונך לאפס את השבוע? פעולה זו תגדיר את כל הימים כסגורים.")) {
-          const resetSchedule = { ...tempSettings.schedule };
-          Object.keys(resetSchedule).forEach(key => {
-              const k = Number(key);
-              resetSchedule[k] = { ...resetSchedule[k], isWorking: false };
-          });
-          
-          setTempSettings(prev => ({ ...prev, schedule: resetSchedule }));
-          // Auto save
-          onUpdateSettings({ ...tempSettings, schedule: resetSchedule });
-      }
   };
 
   const updateDayIsWorking = (dayIndex: number, isWorking: boolean) => {
@@ -141,45 +170,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Service Management
   const handleAddService = () => {
-    if (!newService.name) return;
-    const serviceToAdd = { ...newService, id: crypto.randomUUID() };
-    const updatedServices = [...(tempSettings.services || []), serviceToAdd];
-    setTempSettings({ ...tempSettings, services: updatedServices });
-    setNewService({ id: '', name: '', durationMinutes: 30, price: 0 });
-    // Trigger save
-    onUpdateSettings({ ...tempSettings, services: updatedServices });
+    if (!newService.name || !newService.duration || !newService.price) return;
+    const service: Service = {
+        id: crypto.randomUUID(),
+        name: newService.name,
+        duration: Number(newService.duration),
+        price: Number(newService.price)
+    };
+    
+    const updatedServices = [...(tempSettings.services || []), service];
+    const updatedSettings = { ...tempSettings, services: updatedServices };
+    
+    setTempSettings(updatedSettings);
+    onUpdateSettings(updatedSettings); // Save immediately
+    setNewService({ name: '', duration: 30, price: 0 });
   };
 
   const handleDeleteService = (id: string) => {
-    if (window.confirm("למחוק את השירות?")) {
-        const updatedServices = tempSettings.services.filter(s => s.id !== id);
-        setTempSettings({ ...tempSettings, services: updatedServices });
-        onUpdateSettings({ ...tempSettings, services: updatedServices });
-    }
+      if(!window.confirm('האם למחוק שירות זה?')) return;
+      const updatedServices = tempSettings.services.filter(s => s.id !== id);
+      const updatedSettings = { ...tempSettings, services: updatedServices };
+      setTempSettings(updatedSettings);
+      onUpdateSettings(updatedSettings);
   };
-
-  const tabs = [
-    { id: 'appointments', label: 'יומן', icon: Calendar },
-    { id: 'services', label: 'שירותים', icon: Scissors },
-    { id: 'settings', label: 'הגדרות', icon: Settings },
-  ];
 
   return (
     <div className="animate-in fade-in duration-500">
       {/* Tabs */}
-      <div className="glass p-1.5 rounded-2xl mb-8 flex gap-2 overflow-x-auto no-scrollbar">
-        {tabs.map(tab => (
-            <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`flex-1 min-w-[100px] py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
-                activeTab === tab.id ? 'bg-white/10 text-white shadow-lg border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'
-                }`}
-            >
-                <tab.icon className="inline-block mr-2 align-text-bottom" size={16} />
-                {tab.label}
-            </button>
-        ))}
+      <div className="glass p-1.5 rounded-2xl mb-8 flex flex-wrap gap-2">
+        <button onClick={() => setActiveTab('appointments')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'appointments' ? 'bg-white/10 text-white shadow-lg border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+          <Calendar className="inline-block mr-2" size={16} /> תורים
+        </button>
+        <button onClick={() => setActiveTab('services')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'services' ? 'bg-white/10 text-white shadow-lg border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+          <Scissors className="inline-block mr-2" size={16} /> שירותים
+        </button>
+        <button onClick={() => setActiveTab('settings')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'settings' ? 'bg-white/10 text-white shadow-lg border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+          <Settings className="inline-block mr-2" size={16} /> הגדרות
+        </button>
       </div>
 
       {activeTab === 'appointments' && (
@@ -252,67 +279,76 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {activeTab === 'services' && (
           <div className="space-y-6">
-              <div className="glass-panel p-6 rounded-3xl space-y-4">
-                  <h3 className="text-white font-bold text-lg mb-4">הוסף שירות חדש</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="glass-panel p-6 rounded-3xl">
+                  <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Plus size={18} className="text-gold-500"/> הוסף שירות חדש</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                       <input 
                         type="text" 
-                        placeholder="שם השירות (למשל: תספורת גברים)" 
-                        className="glass-input p-3 rounded-xl w-full"
+                        placeholder="שם הטיפול (לדוגמה: תספורת גברים)"
                         value={newService.name}
                         onChange={e => setNewService({...newService, name: e.target.value})}
+                        className="glass-input p-3 rounded-xl w-full text-sm"
                       />
-                      <div className="flex gap-2">
-                          <input 
+                      <div className="relative">
+                        <input 
                             type="number" 
-                            placeholder="דקות" 
-                            className="glass-input p-3 rounded-xl w-full"
-                            value={newService.durationMinutes}
-                            onChange={e => setNewService({...newService, durationMinutes: Number(e.target.value)})}
-                          />
-                          <input 
-                            type="number" 
-                            placeholder="מחיר" 
-                            className="glass-input p-3 rounded-xl w-full"
-                            value={newService.price}
-                            onChange={e => setNewService({...newService, price: Number(e.target.value)})}
-                          />
+                            placeholder="משך זמן (דקות)"
+                            value={newService.duration || ''}
+                            onChange={e => setNewService({...newService, duration: Number(e.target.value)})}
+                            className="glass-input p-3 rounded-xl w-full text-sm"
+                        />
+                        <span className="absolute left-3 top-3 text-xs text-gray-500">דק'</span>
                       </div>
-                      <Button onClick={handleAddService} disabled={!newService.name}>הוסף</Button>
+                      <div className="relative">
+                        <input 
+                            type="number" 
+                            placeholder="מחיר"
+                            value={newService.price || ''}
+                            onChange={e => setNewService({...newService, price: Number(e.target.value)})}
+                            className="glass-input p-3 rounded-xl w-full text-sm"
+                        />
+                        <span className="absolute left-3 top-3 text-xs text-gray-500">₪</span>
+                      </div>
                   </div>
+                  <Button onClick={handleAddService} fullWidth disabled={!newService.name}>הוסף שירות</Button>
               </div>
 
               <div className="space-y-3">
-                  {tempSettings.services?.map(service => (
-                      <div key={service.id} className="glass p-4 rounded-2xl flex justify-between items-center">
+                  <h3 className="text-lg font-bold text-white px-2">שירותים קיימים</h3>
+                  {tempSettings.services?.map((service) => (
+                      <div key={service.id} className="glass p-4 rounded-2xl flex justify-between items-center group hover:bg-white/5 transition-all">
                           <div>
                               <div className="text-white font-bold">{service.name}</div>
-                              <div className="text-xs text-gray-400 flex gap-3 mt-1">
-                                  <span>⏱ {service.durationMinutes} דקות</span>
-                                  <span>₪ {service.price}</span>
-                              </div>
+                              <div className="text-xs text-gold-500 font-mono mt-1">{service.duration} דקות • {service.price}₪</div>
                           </div>
-                          <button onClick={() => handleDeleteService(service.id)} className="text-gray-500 hover:text-red-500 p-2">
+                          <button 
+                            onClick={() => handleDeleteService(service.id)}
+                            className="w-10 h-10 rounded-full bg-white/5 text-gray-400 hover:text-red-500 hover:bg-red-500/10 flex items-center justify-center transition-all"
+                          >
                               <Trash2 size={18} />
                           </button>
                       </div>
                   ))}
+                  {(!tempSettings.services || tempSettings.services.length === 0) && (
+                      <p className="text-center text-gray-500 text-sm py-4">לא הוגדרו שירותים</p>
+                  )}
               </div>
           </div>
       )}
 
       {activeTab === 'settings' && (
         <form onSubmit={handleSaveSettings} className="space-y-8">
-          
-          <div className="glass-panel p-6 rounded-3xl flex justify-between items-center bg-red-500/5 border-red-500/20">
-              <div>
-                  <h3 className="text-white font-bold">איפוס שבועי</h3>
-                  <p className="text-xs text-gray-400">סגור את כל הימים כדי להתחיל שבוע חדש</p>
-              </div>
-              <Button type="button" variant="danger" onClick={handleResetSchedule} className="text-xs">
-                  <RefreshCcw size={16} />
-                  איפוס שבוע
-              </Button>
+          <div className="glass-panel p-6 rounded-3xl space-y-6">
+             <div className="flex items-start gap-3 bg-gold-500/10 p-4 rounded-xl border border-gold-500/20">
+                 <AlertTriangle className="text-gold-500 shrink-0 mt-0.5" size={20} />
+                 <div>
+                     <h4 className="text-gold-500 font-bold text-sm mb-1">איפוס אוטומטי</h4>
+                     <p className="text-xs text-gray-300 leading-relaxed">
+                         המערכת מוגדרת לאפס את כל ימי העבודה באופן אוטומטי בכל יום שישי בערב (20:00) או במהלך השבת.
+                         זה מאפשר לך להיכנס במוצ"ש ולקבוע משמרות לשבוע החדש בראש שקט.
+                     </p>
+                 </div>
+             </div>
           </div>
 
           <div className="space-y-4">

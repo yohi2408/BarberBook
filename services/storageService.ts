@@ -1,5 +1,4 @@
-
-import { db, auth } from '../firebaseConfig';
+import { db } from '../firebaseConfig';
 import { 
   collection, 
   getDocs, 
@@ -12,133 +11,18 @@ import {
   getDoc,
   updateDoc
 } from 'firebase/firestore';
-import { 
-  signInWithPhoneNumber, 
-  RecaptchaVerifier, 
-  ConfirmationResult, 
-  signOut 
-} from 'firebase/auth';
-import { Appointment, BusinessSettings, DEFAULT_SETTINGS, User, UserRole, DEFAULT_SERVICES } from '../types';
+import { Appointment, BusinessSettings, DEFAULT_SETTINGS, User, UserRole } from '../types';
 
 const APPOINTMENTS_COLLECTION = 'appointments';
 const SETTINGS_COLLECTION = 'settings';
 const USERS_COLLECTION = 'users';
 const SETTINGS_DOC_ID = 'business_settings';
 
+// Cache for current session
 let currentUserCache: User | null = null;
 
 export const storageService = {
-  // --- AUTHENTICATION (SMS) ---
-
-  // 1. Setup ReCaptcha
-  initRecaptcha: (elementId: string) => {
-    if (!auth) return null;
-    try {
-        // @ts-ignore
-        if (window.recaptchaVerifier) return window.recaptchaVerifier;
-        
-        const verifier = new RecaptchaVerifier(auth, elementId, {
-            'size': 'invisible',
-            'callback': () => {
-                // reCAPTCHA solved
-            }
-        });
-        return verifier;
-    } catch (e) {
-        console.error("Recaptcha init error:", e);
-        return null;
-    }
-  },
-
-  // 2. Send SMS
-  sendOtp: async (phoneNumber: string, verifier: any): Promise<{ success: boolean, confirmationResult?: ConfirmationResult, error?: string }> => {
-    try {
-        // Ensure format is international +972
-        let formattedPhone = phoneNumber.replace(/-/g, '').trim();
-        if (formattedPhone.startsWith('05')) {
-            formattedPhone = '+972' + formattedPhone.substring(1);
-        }
-
-        const confirmationResult = await signInWithPhoneNumber(auth, formattedPhone, verifier);
-        return { success: true, confirmationResult };
-    } catch (error: any) {
-        console.error("SMS Error:", error);
-        return { success: false, error: error.message };
-    }
-  },
-
-  // 3. Verify Code & Login/Register
-  verifyOtp: async (confirmationResult: ConfirmationResult, code: string): Promise<{ success: boolean, user?: User, isNewUser?: boolean }> => {
-    try {
-        const result = await confirmationResult.confirm();
-        const firebaseUser = result.user;
-        const phoneNumber = firebaseUser.phoneNumber!; // Normalized from Firebase
-
-        // Check if user exists in Firestore
-        const q = query(collection(db, USERS_COLLECTION), where("phoneNumber", "==", phoneNumber));
-        const querySnapshot = await getDocs(q);
-
-        if (!querySnapshot.empty) {
-            // Existing User
-            const userDoc = querySnapshot.docs[0];
-            const userData = userDoc.data() as User;
-            const appUser = { ...userData, id: userDoc.id };
-            
-            currentUserCache = appUser;
-            localStorage.setItem('current_user', JSON.stringify(appUser));
-            return { success: true, user: appUser, isNewUser: false };
-        } else {
-            // New User (Needs profile creation)
-            return { success: true, isNewUser: true };
-        }
-    } catch (error) {
-        console.error("Verify Error:", error);
-        return { success: false };
-    }
-  },
-
-  // 4. Create Profile (for new users)
-  createProfile: async (fullName: string): Promise<User | null> => {
-     if (!auth.currentUser) return null;
-     const phoneNumber = auth.currentUser.phoneNumber!;
-
-     // Check if this specific number is the hardcoded admin (You can change this number)
-     // Or you can manually set role in Firestore later.
-     // For now, default to CLIENT.
-     const role = UserRole.CLIENT;
-
-     const newUser: User = {
-        id: auth.currentUser.uid,
-        fullName,
-        phoneNumber,
-        role
-     };
-
-     await setDoc(doc(db, USERS_COLLECTION, newUser.id), newUser);
-     
-     currentUserCache = newUser;
-     localStorage.setItem('current_user', JSON.stringify(newUser));
-     return newUser;
-  },
-
-  logout: async (): Promise<void> => {
-    await signOut(auth);
-    currentUserCache = null;
-    localStorage.removeItem('current_user');
-  },
-
-  getCurrentUser: (): User | null => {
-    if (currentUserCache) return currentUserCache;
-    const localData = localStorage.getItem('current_user');
-    if (localData) {
-      currentUserCache = JSON.parse(localData);
-      return currentUserCache;
-    }
-    return null;
-  },
-
-  // --- APPOINTMENTS ---
-  
+  // Appointments
   getAppointments: async (): Promise<Appointment[]> => {
     try {
       const querySnapshot = await getDocs(collection(db, APPOINTMENTS_COLLECTION));
@@ -151,7 +35,7 @@ export const storageService = {
 
   saveAppointment: async (appointment: Appointment): Promise<boolean> => {
     try {
-      // Check double booking
+      // 1. Check for double booking in Cloud
       const q = query(
         collection(db, APPOINTMENTS_COLLECTION), 
         where("date", "==", appointment.date),
@@ -160,9 +44,11 @@ export const storageService = {
       const querySnapshot = await getDocs(q);
       
       if (!querySnapshot.empty) {
-        return false;
+        return false; // Taken
       }
 
+      // 2. Save
+      // Remove 'id' if it exists, let Firestore generate one or use the one provided
       const { id, ...data } = appointment;
       await addDoc(collection(db, APPOINTMENTS_COLLECTION), data);
       return true;
@@ -180,21 +66,20 @@ export const storageService = {
     }
   },
 
-  // --- SETTINGS ---
-
+  // Settings
   getSettings: async (): Promise<BusinessSettings> => {
     try {
       const docRef = doc(db, SETTINGS_COLLECTION, SETTINGS_DOC_ID);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const data = docSnap.data() as BusinessSettings;
-        // Merge missing fields (like services if upgrading)
-        return { 
-            ...DEFAULT_SETTINGS, 
-            ...data,
-            services: data.services || DEFAULT_SERVICES 
-        };
+        // Migration: If schedule is missing (old data), return default or merge
+        if (!data.schedule) {
+            return { ...DEFAULT_SETTINGS, ...data, schedule: DEFAULT_SETTINGS.schedule };
+        }
+        return data;
       } else {
+        // Initialize default settings in cloud if not exist
         await setDoc(docRef, DEFAULT_SETTINGS);
         return DEFAULT_SETTINGS;
       }
@@ -211,4 +96,123 @@ export const storageService = {
       console.error("Error saving settings:", e);
     }
   },
+
+  // Auth
+  register: async (user: Omit<User, 'id' | 'role'>): Promise<{ success: boolean, message?: string }> => {
+    try {
+      // Check if phone exists
+      const q = query(collection(db, USERS_COLLECTION), where("phoneNumber", "==", user.phoneNumber));
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        return { success: false, message: 'מספר טלפון זה כבר רשום במערכת' };
+      }
+
+      const newUser: User = {
+        ...user,
+        id: crypto.randomUUID(), // We can generate ID locally or let Firestore do it
+        role: UserRole.CLIENT
+      };
+
+      await addDoc(collection(db, USERS_COLLECTION), newUser);
+      return { success: true };
+    } catch (e) {
+      console.error("Register error:", e);
+      return { success: false, message: 'שגיאת רשת' };
+    }
+  },
+
+  resetPassword: async (phoneNumber: string, recoveryPin: string, newPassword: string): Promise<{ success: boolean, message?: string }> => {
+    try {
+        const q = query(collection(db, USERS_COLLECTION), where("phoneNumber", "==", phoneNumber));
+        const querySnapshot = await getDocs(q);
+        
+        if (querySnapshot.empty) {
+            return { success: false, message: 'מספר טלפון לא נמצא' };
+        }
+
+        const userDoc = querySnapshot.docs[0];
+        const userData = userDoc.data() as User;
+
+        if (userData.recoveryPin !== recoveryPin) {
+            return { success: false, message: 'קוד שחזור שגוי' };
+        }
+
+        await updateDoc(doc(db, USERS_COLLECTION, userDoc.id), { password: newPassword });
+        return { success: true };
+    } catch (e) {
+        console.error("Reset password error:", e);
+        return { success: false, message: 'שגיאה באיפוס הסיסמא' };
+    }
+  },
+
+  login: async (identifier: string, password: string, remember: boolean = false): Promise<User | null> => {
+    try {
+      const cleanIdentifier = identifier.trim();
+      const cleanPassword = password.trim();
+      
+      // Special Admin Check (Hardcoded for fallback, but ideally should be in DB)
+      if (cleanIdentifier === 'admin' && cleanPassword === 'admin123') {
+         const adminUser: User = { 
+           id: 'admin', 
+           fullName: 'מנהל ראשי', 
+           password: '', 
+           phoneNumber: '0000000000', 
+           role: UserRole.ADMIN 
+         };
+         currentUserCache = adminUser;
+         if (remember) localStorage.setItem('current_user', JSON.stringify(adminUser));
+         else sessionStorage.setItem('current_user', JSON.stringify(adminUser));
+         return adminUser;
+      }
+
+      // Query User by Phone
+      const q = query(collection(db, USERS_COLLECTION), where("phoneNumber", "==", cleanIdentifier));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) return null;
+
+      const userDoc = querySnapshot.docs[0];
+      const userData = userDoc.data() as User;
+
+      // Simple password check (Note: In production, hash passwords!)
+      if (userData.password === cleanPassword) {
+        const user = { ...userData, id: userDoc.id };
+        currentUserCache = user;
+        
+        const storage = remember ? localStorage : sessionStorage;
+        storage.setItem('current_user', JSON.stringify(user));
+        
+        return user;
+      }
+      return null;
+    } catch (e) {
+      console.error("Login error:", e);
+      return null;
+    }
+  },
+
+  logout: (): void => {
+    currentUserCache = null;
+    localStorage.removeItem('current_user');
+    sessionStorage.removeItem('current_user');
+  },
+
+  getCurrentUser: (): User | null => {
+    if (currentUserCache) return currentUserCache;
+    
+    const sessionData = sessionStorage.getItem('current_user');
+    if (sessionData) {
+      currentUserCache = JSON.parse(sessionData);
+      return currentUserCache;
+    }
+
+    const localData = localStorage.getItem('current_user');
+    if (localData) {
+      currentUserCache = JSON.parse(localData);
+      return currentUserCache;
+    }
+
+    return null;
+  }
 };
