@@ -5,7 +5,7 @@ export interface Appointment {
   customerPhone: string;
   date: string; // YYYY-MM-DD
   time: string; // HH:mm
-  duration: number; // Duration in minutes
+  duration: number; // Duration in minutes (Taken from global settings)
   serviceType: string;
   createdAt: number;
 }
@@ -23,14 +23,14 @@ export interface DaySchedule {
 export interface Service {
   id: string;
   name: string;
-  duration: number; // minutes
   price: number;
+  // duration removed as per request
 }
 
 export interface BusinessSettings {
   shopName: string;
-  slotDurationMinutes: number; // Default fallback
-  services: Service[];
+  slotDurationMinutes: number; // Global duration for ALL appointments
+  services: Service[]; // List of available services (Name + Price only)
   lastResetDate?: string; // Tracks the last time the auto-reset ran (YYYY-MM-DD)
   schedule: Record<number, DaySchedule>; // 0 (Sun) to 6 (Sat)
 }
@@ -68,11 +68,11 @@ const offDaySchedule: DaySchedule = {
 
 export const DEFAULT_SETTINGS: BusinessSettings = {
   shopName: "BarberBook Pro",
-  slotDurationMinutes: 30,
+  slotDurationMinutes: 30, // Default 30 min per slot
   services: [
-    { id: '1', name: 'תספורת גברים', duration: 30, price: 60 },
-    { id: '2', name: 'תספורת + זקן', duration: 45, price: 80 },
-    { id: '3', name: 'סידור זקן', duration: 15, price: 30 }
+    { id: '1', name: 'תספורת גברים', price: 60 },
+    { id: '2', name: 'תספורת + זקן', price: 80 },
+    { id: '3', name: 'סידור זקן', price: 30 }
   ],
   schedule: {
     0: defaultDaySchedule("09:00", "19:00"), // Sun

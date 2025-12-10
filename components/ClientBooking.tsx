@@ -136,7 +136,9 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
     if (!daySchedule || !daySchedule.isWorking || !selectedService) return [];
 
     const generatedSlots: string[] = [];
-    const serviceDuration = selectedService.duration;
+    
+    // IMPORTANT: Slot Duration determines the grid (20min, 30min etc) regardless of service
+    const slotDuration = settings.slotDurationMinutes || 30;
     
     // Get existing appointments for this specific day
     const dayAppointments = existingAppointments.filter(appt => 
@@ -147,15 +149,16 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
       const startMinutes = timeToMinutes(range.start);
       const endMinutes = timeToMinutes(range.end);
       
-      // Iterate in 5 minute intervals for flexibility
-      for (let current = startMinutes; current + serviceDuration <= endMinutes; current += 5) {
+      // Iterate using fixed slot duration (Global setting)
+      // e.g., 9:00, 9:30, 10:00...
+      for (let current = startMinutes; current + slotDuration <= endMinutes; current += slotDuration) {
           const slotStart = current;
-          const slotEnd = current + serviceDuration;
+          const slotEnd = current + slotDuration;
           
           // Check collision with any existing appointment
           const isConflict = dayAppointments.some(appt => {
               const apptStart = timeToMinutes(appt.time);
-              const apptDuration = appt.duration || settings.slotDurationMinutes || 30; // Fallback for old data
+              const apptDuration = appt.duration || settings.slotDurationMinutes || 30; 
               const apptEnd = apptStart + apptDuration;
 
               // Collision logic: (SlotStart < ApptEnd) AND (SlotEnd > ApptStart)
@@ -172,7 +175,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
           }
       }
     });
-    return generatedSlots; // No sort needed if generated linearly
+    return generatedSlots; 
   }, [selectedDate, settings, existingAppointments, selectedService]);
 
   const handleServiceSelect = (service: Service) => {
@@ -184,13 +187,16 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
     if (!selectedTime || !selectedService) return;
     setLoading(true);
     
+    // Use Global Slot Duration
+    const slotDuration = settings.slotDurationMinutes || 30;
+
     const newAppointment: Appointment = {
       id: crypto.randomUUID(),
       customerName: user.fullName,
       customerPhone: user.phoneNumber,
       date: format(selectedDate, 'yyyy-MM-dd'),
       time: selectedTime,
-      duration: selectedService.duration, // Save duration for overlap checks
+      duration: slotDuration, // Save the global duration
       serviceType: selectedService.name,
       createdAt: Date.now()
     };
@@ -245,12 +251,9 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
                 <CalendarDays size={22} className="text-gold-500" />
                 תורים עתידיים
             </h2>
-            <Button onClick={() => { setActiveTab('book'); setStep(0); }} variant="primary" className="!py-2 !px-4 text-xs mx-auto block md:hidden">
-                קבע תור חדש
-            </Button>
           </div>
           
-          <Button onClick={() => { setActiveTab('book'); setStep(0); }} variant="primary" className="!py-2 !px-4 text-xs mx-auto mb-6 hidden md:block">
+          <Button onClick={() => { setActiveTab('book'); setStep(0); }} variant="primary" className="!py-2 !px-4 text-xs mx-auto mb-6 block w-fit">
              קבע תור חדש
           </Button>
           
@@ -343,7 +346,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
                               </div>
                               <div>
                                   <div className="text-lg font-bold text-white group-hover:text-gold-500 transition-colors">{service.name}</div>
-                                  <div className="text-xs text-gray-500 font-medium">{service.duration} דקות</div>
+                                  {/* Duration display REMOVED */}
                               </div>
                           </div>
                           <div className="text-xl font-bold text-gray-300 font-mono">
@@ -384,7 +387,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
               </div>
               <div className="text-right">
                 <span className="text-white font-bold text-lg block">{selectedService?.name}</span>
-                <span className="text-xs text-gold-500">{selectedService?.duration} דק' • {selectedService?.price}₪</span>
+                <span className="text-xs text-gold-500">{selectedService?.price}₪</span>
               </div>
             </div>
 
@@ -427,7 +430,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
        
        <div className="glass-panel p-4 rounded-2xl flex justify-between items-center border-l-4 border-gold-500">
            <span className="text-gray-400 text-sm">טיפול נבחר:</span>
-           <span className="font-bold text-white">{selectedService?.name} <span className="text-xs font-normal text-gold-500">({selectedService?.duration} דק')</span></span>
+           <span className="font-bold text-white">{selectedService?.name}</span>
        </div>
 
       <div className="relative group">

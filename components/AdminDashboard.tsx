@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Appointment, BusinessSettings, TimeRange, DEFAULT_SETTINGS, Service } from '../types';
 import { format, addDays } from 'date-fns';
 import he from 'date-fns/locale/he';
-import { Trash2, Calendar, Clock, Phone, User, Settings, Plus, X, Archive, History, Scissors, AlertTriangle } from 'lucide-react';
+import { Trash2, Calendar, Phone, Settings, Plus, X, Archive, History, Scissors, AlertTriangle, Clock } from 'lucide-react';
 import { Button } from './Button';
 
 interface AdminDashboardProps {
@@ -31,8 +31,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [tempSettings, setTempSettings] = useState<BusinessSettings>(settings);
   const [saving, setSaving] = useState(false);
 
-  // New Service State
-  const [newService, setNewService] = useState<Partial<Service>>({ name: '', duration: 30, price: 0 });
+  // New Service State (Duration removed)
+  const [newService, setNewService] = useState<Partial<Service>>({ name: '', price: 0 });
 
   // Sync settings and handle migration
   useEffect(() => {
@@ -81,7 +81,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (settings.shopName) {
         checkAutoReset();
     }
-  }, [settings.lastResetDate, settings.shopName]); // Run when settings load
+  }, [settings.lastResetDate, settings.shopName]); 
 
   const now = new Date();
   
@@ -170,11 +170,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Service Management
   const handleAddService = () => {
-    if (!newService.name || !newService.duration || !newService.price) return;
+    if (!newService.name || !newService.price) return;
     const service: Service = {
         id: crypto.randomUUID(),
         name: newService.name,
-        duration: Number(newService.duration),
         price: Number(newService.price)
     };
     
@@ -183,7 +182,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     
     setTempSettings(updatedSettings);
     onUpdateSettings(updatedSettings); // Save immediately
-    setNewService({ name: '', duration: 30, price: 0 });
+    setNewService({ name: '', price: 0 });
   };
 
   const handleDeleteService = (id: string) => {
@@ -281,7 +280,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="space-y-6">
               <div className="glass-panel p-6 rounded-3xl">
                   <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Plus size={18} className="text-gold-500"/> הוסף שירות חדש</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                       <input 
                         type="text" 
                         placeholder="שם הטיפול (לדוגמה: תספורת גברים)"
@@ -289,16 +288,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         onChange={e => setNewService({...newService, name: e.target.value})}
                         className="glass-input p-3 rounded-xl w-full text-sm"
                       />
-                      <div className="relative">
-                        <input 
-                            type="number" 
-                            placeholder="משך זמן (דקות)"
-                            value={newService.duration || ''}
-                            onChange={e => setNewService({...newService, duration: Number(e.target.value)})}
-                            className="glass-input p-3 rounded-xl w-full text-sm"
-                        />
-                        <span className="absolute left-3 top-3 text-xs text-gray-500">דק'</span>
-                      </div>
+                      {/* Duration input REMOVED */}
                       <div className="relative">
                         <input 
                             type="number" 
@@ -319,7 +309,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div key={service.id} className="glass p-4 rounded-2xl flex justify-between items-center group hover:bg-white/5 transition-all">
                           <div>
                               <div className="text-white font-bold">{service.name}</div>
-                              <div className="text-xs text-gold-500 font-mono mt-1">{service.duration} דקות • {service.price}₪</div>
+                              <div className="text-xs text-gold-500 font-mono mt-1">{service.price}₪</div>
                           </div>
                           <button 
                             onClick={() => handleDeleteService(service.id)}
@@ -339,6 +329,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {activeTab === 'settings' && (
         <form onSubmit={handleSaveSettings} className="space-y-8">
           <div className="glass-panel p-6 rounded-3xl space-y-6">
+             {/* Global Slot Duration Setting */}
+             <div className="flex items-center gap-4">
+                 <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-gold-500 border border-white/5">
+                     <Clock size={24} />
+                 </div>
+                 <div className="flex-1">
+                     <label className="text-white font-bold block mb-1">משך זמן לתור (דקות)</label>
+                     <p className="text-xs text-gray-400 mb-2">קובע את המרווחים ביומן (לדוגמה: כל 20 דקות)</p>
+                     <input 
+                        type="number"
+                        value={tempSettings.slotDurationMinutes || 30}
+                        onChange={(e) => setTempSettings({...tempSettings, slotDurationMinutes: Number(e.target.value)})}
+                        className="glass-input p-3 rounded-xl w-full text-sm font-mono"
+                     />
+                 </div>
+             </div>
+
              <div className="flex items-start gap-3 bg-gold-500/10 p-4 rounded-xl border border-gold-500/20">
                  <AlertTriangle className="text-gold-500 shrink-0 mt-0.5" size={20} />
                  <div>
