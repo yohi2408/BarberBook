@@ -37,6 +37,19 @@ const parseLocalDate = (dateStr: string) => {
     return new Date(year, month - 1, day);
 };
 
+// Convert HH:mm to minutes from midnight
+const timeToMinutes = (time: string): number => {
+    const [hours, minutes] = time.split(':').map(Number);
+    return hours * 60 + minutes;
+};
+
+// Convert minutes to HH:mm
+const minutesToTime = (minutes: number): string => {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+};
+
 export const ClientBooking: React.FC<ClientBookingProps> = ({ 
   user, 
   settings, 
@@ -79,7 +92,6 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
 
     return weekDays.filter(day => {
         // 1. Filter out days in the past (before today)
-        // Note: If today is Saturday, currentWeekStart is Sunday (tomorrow), so nothing is in the past.
         if (isBefore(day, today)) return false;
 
         // 2. Filter out non-working days based on settings
@@ -121,37 +133,46 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
     const dayOfWeek = selectedDate.getDay();
     const daySchedule = settings.schedule?.[dayOfWeek];
 
-    if (!daySchedule || !daySchedule.isWorking) return [];
+    if (!daySchedule || !daySchedule.isWorking || !selectedService) return [];
 
     const generatedSlots: string[] = [];
-    // Use selected service duration or fallback to default
-    const duration = selectedService?.duration || settings.slotDurationMinutes || 30;
+    const serviceDuration = selectedService.duration;
     
+    // Get existing appointments for this specific day
+    const dayAppointments = existingAppointments.filter(appt => 
+        appt.date === format(selectedDate, 'yyyy-MM-dd')
+    );
+
     daySchedule.timeRanges.forEach(range => {
-      const [startHour, startMin] = range.start.split(':').map(Number);
-      const [endHour, endMin] = range.end.split(':').map(Number);
+      const startMinutes = timeToMinutes(range.start);
+      const endMinutes = timeToMinutes(range.end);
       
-      let current = new Date(selectedDate);
-      current.setHours(startHour, startMin, 0, 0);
-      
-      const endTime = new Date(selectedDate);
-      endTime.setHours(endHour, endMin, 0, 0);
+      // Iterate in 5 minute intervals for flexibility
+      for (let current = startMinutes; current + serviceDuration <= endMinutes; current += 5) {
+          const slotStart = current;
+          const slotEnd = current + serviceDuration;
+          
+          // Check collision with any existing appointment
+          const isConflict = dayAppointments.some(appt => {
+              const apptStart = timeToMinutes(appt.time);
+              const apptDuration = appt.duration || settings.slotDurationMinutes || 30; // Fallback for old data
+              const apptEnd = apptStart + apptDuration;
 
-      while (current < endTime) {
-        const timeString = format(current, 'HH:mm');
-        const isBooked = existingAppointments.some(appt => 
-          appt.date === format(selectedDate, 'yyyy-MM-dd') && 
-          appt.time === timeString
-        );
-        const isPast = isSameDay(selectedDate, new Date()) && current < new Date();
+              // Collision logic: (SlotStart < ApptEnd) AND (SlotEnd > ApptStart)
+              return (slotStart < apptEnd && slotEnd > apptStart);
+          });
 
-        if (!isBooked && !isPast) {
-          generatedSlots.push(timeString);
-        }
-        current = new Date(current.getTime() + duration * 60000);
+          // Check if slot is in the past (for today)
+          const isToday = isSameDay(selectedDate, new Date());
+          const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+          const isPast = isToday && slotStart <= nowMinutes;
+
+          if (!isConflict && !isPast) {
+              generatedSlots.push(minutesToTime(slotStart));
+          }
       }
     });
-    return generatedSlots.sort();
+    return generatedSlots; // No sort needed if generated linearly
   }, [selectedDate, settings, existingAppointments, selectedService]);
 
   const handleServiceSelect = (service: Service) => {
@@ -169,6 +190,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
       customerPhone: user.phoneNumber,
       date: format(selectedDate, 'yyyy-MM-dd'),
       time: selectedTime,
+      duration: selectedService.duration, // Save duration for overlap checks
       serviceType: selectedService.name,
       createdAt: Date.now()
     };
@@ -178,7 +200,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
     if (success) {
       setStep(3);
     } else {
-      onShowToast('שגיאה בקביעת התור', 'התור נתפס על ידי משתמש אחר ברגע זה.');
+      onShowToast('שגיאה בקביעת התור', 'התור נתפס על ידי משתמש אחר ברגע זה או שיש חפיפה בזמנים.');
       setStep(1);
       setSelectedTime(null);
     }

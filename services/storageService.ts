@@ -1,3 +1,4 @@
+
 import { db } from '../firebaseConfig';
 import { 
   collection, 
@@ -21,6 +22,12 @@ const SETTINGS_DOC_ID = 'business_settings';
 // Cache for current session
 let currentUserCache: User | null = null;
 
+// Helper to convert HH:mm to minutes
+const timeToMinutes = (time: string): number => {
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+};
+
 export const storageService = {
   // Appointments
   getAppointments: async (): Promise<Appointment[]> => {
@@ -35,20 +42,35 @@ export const storageService = {
 
   saveAppointment: async (appointment: Appointment): Promise<boolean> => {
     try {
-      // 1. Check for double booking in Cloud
+      // 1. Fetch ALL appointments for this date to check ranges
+      // We cannot rely on exact time match anymore
       const q = query(
         collection(db, APPOINTMENTS_COLLECTION), 
-        where("date", "==", appointment.date),
-        where("time", "==", appointment.time)
+        where("date", "==", appointment.date)
       );
       const querySnapshot = await getDocs(q);
+      const existingAppts = querySnapshot.docs.map(doc => doc.data() as Appointment);
+
+      // New Appointment Range
+      const newStart = timeToMinutes(appointment.time);
+      const newEnd = newStart + appointment.duration;
+
+      // Check for conflicts
+      const hasConflict = existingAppts.some(existing => {
+         const existStart = timeToMinutes(existing.time);
+         // Fallback to 30 min if duration is missing in old data
+         const existDuration = existing.duration || 30; 
+         const existEnd = existStart + existDuration;
+
+         // Overlap formula: (StartA < EndB) and (EndA > StartB)
+         return (newStart < existEnd && newEnd > existStart);
+      });
       
-      if (!querySnapshot.empty) {
+      if (hasConflict) {
         return false; // Taken
       }
 
       // 2. Save
-      // Remove 'id' if it exists, let Firestore generate one or use the one provided
       const { id, ...data } = appointment;
       await addDoc(collection(db, APPOINTMENTS_COLLECTION), data);
       return true;

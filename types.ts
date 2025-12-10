@@ -5,6 +5,7 @@ export interface Appointment {
   customerPhone: string;
   date: string; // YYYY-MM-DD
   time: string; // HH:mm
+  duration: number; // Duration in minutes
   serviceType: string;
   createdAt: number;
 }
