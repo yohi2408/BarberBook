@@ -1,0 +1,469 @@
+
+import React, { useState, useMemo, useRef } from 'react';
+import { format, isSameDay, isBefore, startOfDay } from 'date-fns';
+import he from 'date-fns/locale/he';
+import { Appointment, BusinessSettings, User, Service } from '../types';
+import { Button } from './Button';
+import { Calendar, Sparkles, CalendarDays, History, Trash2, CheckCircle, Clock as ClockIcon, Scissors, ChevronLeft } from 'lucide-react';
+
+interface ClientBookingProps {
+  user: User;
+  settings: BusinessSettings;
+  existingAppointments: Appointment[];
+  onBook: (appointment: Appointment) => Promise<boolean>;
+  onShowToast: (msg: string, sub: string) => void;
+  onCancelAppointment: (id: string) => void;
+}
+
+// Helper to parse "YYYY-MM-DD" to local Date object
+const parseLocalDate = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+};
+
+// Convert HH:mm to minutes from midnight
+const timeToMinutes = (time: string): number => {
+    const [hours, minutes] = time.split(':').map(Number);
+    return hours * 60 + minutes;
+};
+
+// Convert minutes to HH:mm
+const minutesToTime = (minutes: number): string => {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+};
+
+export const ClientBooking: React.FC<ClientBookingProps> = ({ 
+  user, 
+  settings, 
+  existingAppointments, 
+  onBook,
+  onShowToast,
+  onCancelAppointment
+}) => {
+  const [activeTab, setActiveTab] = useState<'book' | 'list'>('book');
+  
+  const [selectedService, setSelectedService] = useState<Service | null>(null);
+  
+  // LOGIC CHANGE: Get Available dates from calendar keys
+  const availableDates = useMemo(() => {
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const dates = Object.keys(settings.calendar || {})
+        .filter(dateStr => {
+            // Must be today or future AND must be isWorking
+            return dateStr >= today && settings.calendar[dateStr].isWorking;
+        })
+        .sort()
+        .map(dateStr => parseLocalDate(dateStr));
+      return dates;
+  }, [settings.calendar]);
+
+  // Default select first available date
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  
+  // When availableDates change (e.g. init), set selectedDate to first one if not set
+  useMemo(() => {
+      if (availableDates.length > 0 && !selectedDate) {
+          setSelectedDate(availableDates[0]);
+      }
+  }, [availableDates]);
+
+  const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  // Step 0 = Service Select, 1 = Date/Time, 2 = Confirm, 3 = Success
+  const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
+  const [loading, setLoading] = useState(false);
+  
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const { upcomingAppointments, historyAppointments } = useMemo(() => {
+    const now = new Date();
+    const userAppts = existingAppointments.filter(a => a.customerPhone === user.phoneNumber);
+    
+    const upcoming: Appointment[] = [];
+    const history: Appointment[] = [];
+
+    userAppts.forEach(appt => {
+        const apptDate = parseLocalDate(appt.date);
+        const [hours, minutes] = appt.time.split(':').map(Number);
+        const apptDateTime = new Date(apptDate);
+        apptDateTime.setHours(hours, minutes);
+
+        if (apptDateTime < now) {
+            history.push(appt);
+        } else {
+            upcoming.push(appt);
+        }
+    });
+
+    upcoming.sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime());
+    history.sort((a, b) => new Date(`${b.date}T${b.time}`).getTime() - new Date(`${a.date}T${a.time}`).getTime());
+
+    return { upcomingAppointments: upcoming, historyAppointments: history };
+  }, [existingAppointments, user.phoneNumber]);
+
+  const slots = useMemo(() => {
+    if (!selectedDate) return [];
+
+    const dateKey = format(selectedDate, 'yyyy-MM-dd');
+    const daySchedule = settings.calendar?.[dateKey];
+
+    if (!daySchedule || !daySchedule.isWorking || !selectedService) return [];
+
+    const generatedSlots: string[] = [];
+    
+    // Global slot duration
+    const slotDuration = settings.slotDurationMinutes || 30;
+    
+    // Get existing appointments for this specific day
+    const dayAppointments = existingAppointments.filter(appt => 
+        appt.date === dateKey
+    );
+
+    daySchedule.timeRanges.forEach(range => {
+      const startMinutes = timeToMinutes(range.start);
+      const endMinutes = timeToMinutes(range.end);
+      
+      for (let current = startMinutes; current + slotDuration <= endMinutes; current += slotDuration) {
+          const slotStart = current;
+          const slotEnd = current + slotDuration;
+          
+          // Check collision with any existing appointment
+          const isConflict = dayAppointments.some(appt => {
+              const apptStart = timeToMinutes(appt.time);
+              const apptDuration = appt.duration || settings.slotDurationMinutes || 30; 
+              const apptEnd = apptStart + apptDuration;
+
+              return (slotStart < apptEnd && slotEnd > apptStart);
+          });
+
+          // Check if slot is in the past (for today)
+          const isToday = isSameDay(selectedDate, new Date());
+          const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+          const isPast = isToday && slotStart <= nowMinutes;
+
+          if (!isConflict && !isPast) {
+              generatedSlots.push(minutesToTime(slotStart));
+          }
+      }
+    });
+    return generatedSlots; 
+  }, [selectedDate, settings, existingAppointments, selectedService]);
+
+  const handleServiceSelect = (service: Service) => {
+      setSelectedService(service);
+      setStep(1);
+      // Ensure we have a date selected if possible
+      if (!selectedDate && availableDates.length > 0) {
+          setSelectedDate(availableDates[0]);
+      }
+  };
+
+  const handleConfirm = async () => {
+    if (!selectedTime || !selectedService || !selectedDate) return;
+    setLoading(true);
+    
+    const slotDuration = settings.slotDurationMinutes || 30;
+
+    const newAppointment: Appointment = {
+      id: crypto.randomUUID(),
+      customerName: user.fullName,
+      customerPhone: user.phoneNumber,
+      date: format(selectedDate, 'yyyy-MM-dd'),
+      time: selectedTime,
+      duration: slotDuration, 
+      serviceType: selectedService.name,
+      createdAt: Date.now()
+    };
+    
+    const success = await onBook(newAppointment);
+
+    if (success) {
+      setStep(3);
+    } else {
+      onShowToast('שגיאה בקביעת התור', 'התור נתפס על ידי משתמש אחר ברגע זה או שיש חפיפה בזמנים.');
+      setStep(1);
+      setSelectedTime(null);
+    }
+    setLoading(false);
+  };
+
+  const handleFinish = () => {
+    setStep(0);
+    setSelectedTime(null);
+    setSelectedService(null);
+    setActiveTab('list');
+  };
+
+  if (step === 3) {
+    return (
+      <div className="animate-in fade-in zoom-in duration-500 py-16 text-center relative">
+        <div className="absolute inset-0 bg-green-500/10 blur-[100px] rounded-full pointer-events-none"></div>
+        <div className="w-28 h-28 bg-gradient-to-tr from-green-400 to-green-600 rounded-full flex items-center justify-center mx-auto mb-8 shadow-[0_0_50px_rgba(74,222,128,0.4)] animate-float">
+          <CheckCircle size={56} className="text-white" />
+        </div>
+        <h2 className="text-4xl font-black text-white mb-3 tracking-tight">התור נקבע!</h2>
+        <p className="text-gray-400 mb-10 text-lg">מחכים לראותך במספרה</p>
+        <Button onClick={handleFinish} fullWidth className="max-w-xs mx-auto shadow-2xl">
+           סיום ומעבר לתורים שלי
+        </Button>
+      </div>
+    );
+  }
+
+  if (activeTab === 'list') {
+    return (
+       <div className="animate-in fade-in slide-in-from-right-8 duration-300">
+        <div className="glass p-1.5 rounded-2xl mb-8 flex gap-2">
+          <button onClick={() => { setActiveTab('book'); setStep(0); }} className="flex-1 py-3 rounded-xl text-sm font-bold text-gray-400 hover:text-white transition-all hover:bg-white/5">קביעת תור</button>
+          <button onClick={() => setActiveTab('list')} className="flex-1 py-3 rounded-xl text-sm font-bold bg-white/10 text-white shadow-lg border border-white/10">התורים שלי</button>
+        </div>
+
+        {/* Upcoming Section */}
+        <div className="space-y-4 mb-10">
+          <div className="flex justify-between items-center mb-4">
+             <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <CalendarDays size={22} className="text-gold-500" />
+                תורים עתידיים
+            </h2>
+          </div>
+          
+          <Button onClick={() => { setActiveTab('book'); setStep(0); }} variant="primary" className="!py-2 !px-4 text-xs mx-auto mb-6 block w-fit">
+             קבע תור חדש
+          </Button>
+          
+          {upcomingAppointments.length === 0 ? (
+            <div className="text-center py-16 glass-panel rounded-3xl border-dashed border-white/10">
+              <p className="text-gray-400 font-medium">אין תורים עתידיים</p>
+              <Button variant="outline" onClick={() => { setActiveTab('book'); setStep(0); }} className="mt-4 mx-auto block">קבע תור חדש</Button>
+            </div>
+          ) : (
+            upcomingAppointments.map(appt => {
+              const dateObj = parseLocalDate(appt.date);
+              return (
+                <div key={appt.id} className="glass-panel p-5 rounded-3xl flex items-center gap-5 transition-transform hover:scale-[1.02] group">
+                   <div className="bg-black/30 p-4 rounded-2xl text-center min-w-[80px] border border-white/5 group-hover:border-gold-500/30 transition-colors">
+                      <div className="text-xs text-gray-400 font-medium">{format(dateObj, 'MMM', {locale: he})}</div>
+                      <div className="text-3xl font-black text-white">{format(dateObj, 'd')}</div>
+                   </div>
+                   <div className="flex-1">
+                      <div className="text-gold-500 text-sm font-bold mb-1">{format(dateObj, 'EEEE', {locale: he})}</div>
+                      <div className="text-3xl font-bold text-white font-mono tracking-tight">{appt.time}</div>
+                      <div className="text-xs text-gray-400 mt-1">{appt.serviceType}</div>
+                   </div>
+                   <button 
+                       onClick={() => { if (window.confirm('האם אתה בטוח?')) onCancelAppointment(appt.id); }}
+                       className="w-11 h-11 rounded-full bg-white/5 text-gray-400 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all border border-white/5"
+                   >
+                       <Trash2 size={18} />
+                   </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* History Section */}
+        {historyAppointments.length > 0 && (
+            <div className="space-y-4 opacity-70 hover:opacity-100 transition-opacity duration-300">
+                <h2 className="text-lg font-bold text-gray-500 mb-2 flex items-center gap-2 px-2 mt-8 border-t border-white/5 pt-8">
+                    <History size={18} />
+                    היסטוריה
+                </h2>
+                {historyAppointments.map(appt => {
+                    const dateObj = parseLocalDate(appt.date);
+                    return (
+                        <div key={appt.id} className="glass p-4 rounded-2xl flex items-center gap-4 grayscale hover:grayscale-0 transition-all">
+                            <div className="bg-white/5 p-2 rounded-xl text-center min-w-[60px]">
+                                <div className="text-lg font-bold text-gray-300">{format(dateObj, 'd')}</div>
+                                <div className="text-[10px] text-gray-500">{format(dateObj, 'MMM', {locale: he})}</div>
+                            </div>
+                            <div className="flex-1">
+                                <div className="text-gray-400 text-sm font-bold">{format(dateObj, 'EEEE', {locale: he})}</div>
+                                <div className="text-lg font-bold text-gray-500 font-mono">{appt.time}</div>
+                                <div className="text-xs text-gray-600">{appt.serviceType}</div>
+                            </div>
+                            <div className="text-[10px] font-bold text-green-500/70 border border-green-500/20 bg-green-500/5 px-3 py-1 rounded-full">הושלם</div>
+                        </div>
+                    );
+                })}
+            </div>
+        )}
+       </div>
+    );
+  }
+
+  // Step 0: Service Selection
+  if (step === 0) {
+      return (
+        <div className="animate-in fade-in duration-500 space-y-6">
+           <div className="glass p-1.5 rounded-2xl mb-8 flex gap-2">
+            <button onClick={() => setActiveTab('book')} className="flex-1 py-3 rounded-xl text-sm font-bold bg-gold-500 text-black shadow-[0_0_20px_rgba(212,175,55,0.3)]">קביעת תור</button>
+            <button onClick={() => setActiveTab('list')} className="flex-1 py-3 rounded-xl text-sm font-bold text-gray-400 hover:text-white transition-all hover:bg-white/5">התורים שלי</button>
+          </div>
+
+          <div className="text-center mb-6">
+              <h2 className="text-2xl font-black text-white mb-2">בחר סוג טיפול</h2>
+              <p className="text-gray-400 text-sm">אנא בחר את השירות המבוקש כדי שנמצא לך תור מתאים</p>
+          </div>
+
+          <div className="grid gap-4">
+              {settings.services && settings.services.length > 0 ? (
+                  settings.services.map(service => (
+                      <button 
+                        key={service.id}
+                        onClick={() => handleServiceSelect(service)}
+                        className="glass-panel p-5 rounded-2xl flex justify-between items-center group hover:bg-white/10 hover:border-gold-500/30 transition-all text-right"
+                      >
+                          <div className="flex items-center gap-4">
+                              <div className="w-12 h-12 rounded-full bg-gold-500/10 text-gold-500 flex items-center justify-center border border-gold-500/20 group-hover:scale-110 transition-transform">
+                                  <Scissors size={20} />
+                              </div>
+                              <div>
+                                  <div className="text-lg font-bold text-white group-hover:text-gold-500 transition-colors">{service.name}</div>
+                              </div>
+                          </div>
+                          <div className="text-xl font-bold text-gray-300 font-mono">
+                              {service.price}₪
+                          </div>
+                      </button>
+                  ))
+              ) : (
+                  // Fallback if no services defined
+                  <div className="text-center py-10">
+                      <p className="text-gray-500">לא הוגדרו שירותים במערכת</p>
+                  </div>
+              )}
+          </div>
+        </div>
+      );
+  }
+
+  // Booking Confirmation Step
+  if (step === 2) {
+    if (!selectedDate) return null;
+    return (
+      <div className="animate-in fade-in slide-in-from-bottom-8 duration-500">
+        <div className="glass-panel p-8 rounded-[40px] mb-6 shadow-2xl relative overflow-hidden border-t border-white/20">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-gold-500/20 rounded-full blur-[80px] -mr-20 -mt-20"></div>
+          
+          <div className="relative z-10 text-center mb-8">
+            <div className="w-16 h-16 bg-gold-500/20 rounded-full flex items-center justify-center mx-auto mb-4 text-gold-500 border border-gold-500/30">
+               <Sparkles size={28} className="animate-pulse" />
+            </div>
+            <h2 className="text-2xl font-black text-white">סיכום פרטים</h2>
+          </div>
+          
+          <div className="space-y-4 mb-10 relative z-10">
+            <div className="glass-input p-5 rounded-2xl flex justify-between items-center group hover:border-gold-500/30 transition-colors">
+              <div className="flex items-center gap-3">
+                 <Scissors className="text-gray-500 group-hover:text-gold-500 transition-colors" size={20} />
+                 <span className="text-gray-300 font-medium">שירות</span>
+              </div>
+              <div className="text-right">
+                <span className="text-white font-bold text-lg block">{selectedService?.name}</span>
+                <span className="text-xs text-gold-500">{selectedService?.price}₪</span>
+              </div>
+            </div>
+
+            <div className="glass-input p-5 rounded-2xl flex justify-between items-center group hover:border-gold-500/30 transition-colors">
+              <div className="flex items-center gap-3">
+                 <Calendar className="text-gray-500 group-hover:text-gold-500 transition-colors" size={20} />
+                 <span className="text-gray-300 font-medium">תאריך</span>
+              </div>
+              <span className="text-white font-bold text-lg">{format(selectedDate, 'EEEE d MMMM', { locale: he })}</span>
+            </div>
+            
+            <div className="glass-input p-5 rounded-2xl flex justify-between items-center group hover:border-gold-500/30 transition-colors">
+              <div className="flex items-center gap-3">
+                 <ClockIcon className="text-gray-500 group-hover:text-gold-500 transition-colors" size={20} />
+                 <span className="text-gray-300 font-medium">שעה</span>
+              </div>
+              <span className="text-gold-500 font-black text-2xl font-mono">{selectedTime}</span>
+            </div>
+          </div>
+
+          <div className="flex gap-4 relative z-10">
+            <Button variant="secondary" onClick={() => setStep(1)} className="flex-1">חזרה</Button>
+            <Button onClick={handleConfirm} fullWidth isLoading={loading} className="flex-[2]">
+              אשר וקבע תור
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Step 1: Booking Calendar
+  return (
+    <div className="space-y-8 animate-in fade-in duration-500 pb-24">
+       <div className="flex items-center mb-4">
+           <button onClick={() => setStep(0)} className="flex items-center gap-1 text-gray-400 hover:text-white text-sm">
+               <ChevronLeft size={16} /> החלף שירות
+           </button>
+       </div>
+       
+       <div className="glass-panel p-4 rounded-2xl flex justify-between items-center border-l-4 border-gold-500">
+           <span className="text-gray-400 text-sm">טיפול נבחר:</span>
+           <span className="font-bold text-white">{selectedService?.name}</span>
+       </div>
+
+      <div className="relative group">
+        <div className="flex justify-between items-center mb-5 px-2">
+            <h2 className="text-xl font-bold flex items-center gap-2"><Calendar size={22} className="text-gold-500" /> בחר תאריך</h2>
+            <div className="text-xs font-mono text-gray-500 bg-white/5 px-2 py-1 rounded">ימים פנויים</div>
+        </div>
+        
+        <div ref={scrollContainerRef} className="flex gap-3 overflow-x-auto pb-6 pt-2 no-scrollbar px-6 snap-x scroll-smooth justify-start" style={{ direction: 'rtl' }}>
+          {availableDates.length > 0 ? availableDates.map((day) => {
+            const isSelected = selectedDate && isSameDay(day, selectedDate);
+            const isTodayDate = isSameDay(day, startOfDay(new Date()));
+            return (
+              <button
+                key={day.toISOString()}
+                onClick={() => { setSelectedDate(day); setSelectedTime(null); }}
+                className={`snap-center shrink-0 w-[80px] h-[100px] rounded-[22px] flex flex-col items-center justify-center gap-1 transition-all duration-300 border ${isSelected ? 'bg-gradient-to-b from-gold-300 to-gold-500 border-gold-400 text-black shadow-[0_0_25px_rgba(212,175,55,0.4)] scale-105 ring-2 ring-gold-500/20' : 'glass hover:bg-white/10 text-gray-400 hover:border-white/20'}`}
+              >
+                <span className={`text-[11px] font-bold tracking-wider uppercase ${isSelected ? 'opacity-90' : 'opacity-60'}`}>{isTodayDate ? 'היום' : format(day, 'EEEE', { locale: he })}</span>
+                <span className={`text-3xl font-black ${isSelected ? 'text-black' : 'text-white'}`}>{format(day, 'd')}</span>
+                <span className={`text-[10px] font-medium ${isSelected ? 'opacity-90' : 'opacity-50'}`}>{format(day, 'MMM', { locale: he })}</span>
+              </button>
+            );
+          }) : (
+             <div className="w-full text-center py-8 text-gray-500 text-sm">אין ימי קבלה פנויים. נסה שוב מאוחר יותר.</div>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <h2 className="text-xl font-bold mb-5 flex items-center gap-2 px-2"><ClockIcon size={22} className="text-gold-500" /> בחר שעה</h2>
+        {slots.length === 0 ? (
+          <div className="glass-panel rounded-3xl p-12 text-center text-gray-500 border-dashed border-white/10">
+            <p>{selectedDate ? 'אין תורים פנויים בתאריך זה' : 'בחר תאריך לצפייה בתורים'}</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 px-1">
+            {slots.map((time) => (
+              <button
+                key={time}
+                onClick={() => setSelectedTime(time)}
+                className={`py-3.5 rounded-xl font-bold tracking-wider transition-all duration-300 border relative overflow-hidden group ${selectedTime === time ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.3)] scale-[1.02]' : 'glass text-gray-300 hover:bg-white/10 hover:border-white/30 hover:text-white'}`}
+              >
+                <span className="relative z-10">{time}</span>
+                {selectedTime === time && <div className="absolute inset-0 bg-gradient-to-tr from-gray-200 to-white opacity-50"></div>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="fixed bottom-6 left-4 right-4 max-w-md mx-auto z-40 pointer-events-none">
+        <div className={`transition-all duration-500 transform ${!selectedTime ? 'translate-y-24 opacity-0' : 'translate-y-0 opacity-100'} pointer-events-auto`}>
+            <Button fullWidth onClick={() => setStep(2)} className="shadow-2xl shadow-gold-500/20 py-4 text-lg">
+            המשך לסיכום
+            </Button>
+        </div>
+      </div>
+    </div>
+  );
+};
