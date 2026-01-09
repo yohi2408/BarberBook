@@ -9,7 +9,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { Auth } from './components/Auth';
 import { Toast } from './components/Toast';
 import { InstallPWA } from './components/InstallPWA';
-import { Loader2, Bell } from 'lucide-react';
+import { Loader2, Bell, Smartphone } from 'lucide-react';
 import { Button } from './components/Button';
 
 function App() {
@@ -23,6 +23,24 @@ function App() {
   
   const [toast, setToast] = useState({ visible: false, message: '', subMessage: '' });
 
+  // Real-time Notification Listener
+  useEffect(() => {
+    if (!user) return;
+
+    // Listen for broadcasted notifications (like slot openings)
+    const unsubscribe = storageService.onNotificationReceived((notif) => {
+      // Don't notify the person who triggered it (if we had that info)
+      // For now, simple deduplication using session storage
+      const lastNotifId = sessionStorage.getItem('last_notif_id');
+      if (lastNotifId === notif.id) return;
+
+      sessionStorage.setItem('last_notif_id', notif.id);
+      notificationService.sendLocalNotification(notif.title, notif.body);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
   useEffect(() => {
     const init = async () => {
       const currentUser = storageService.getCurrentUser();
@@ -35,7 +53,6 @@ function App() {
         setAppointments(appts);
         setSettings(sets);
         
-        // Check for reminders on load
         if (currentUser.role === UserRole.CLIENT) {
           notificationService.checkAndScheduleReminders(appts, currentUser.phoneNumber);
         }
@@ -44,8 +61,7 @@ function App() {
     };
     init();
     
-    // Auto-register service worker if permission exists
-    if (Notification.permission === 'granted') {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       notificationService.registerServiceWorker();
     }
   }, []);
@@ -63,9 +79,6 @@ function App() {
     ]);
     setAppointments(appts);
     setSettings(sets);
-    if (loggedInUser.role === UserRole.CLIENT) {
-       notificationService.checkAndScheduleReminders(appts, loggedInUser.phoneNumber);
-    }
     setLoading(false);
   };
 
@@ -91,9 +104,16 @@ function App() {
     setAppointments(updatedList);
     showToast('התור בוטל בהצלחה');
     
-    // Trigger "Slot Opened" notification
     if (apptToCancel) {
-      notificationService.notifySlotOpened(apptToCancel.date, apptToCancel.time);
+      // Logic: Broadcast to EVERYONE that a slot opened
+      const dateObj = new Date(apptToCancel.date);
+      const dayName = dateObj.toLocaleDateString('he-IL', { weekday: 'long' });
+      const formattedDate = dateObj.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
+      
+      await storageService.broadcastNotification(
+        '🎉 תור חדש התפנה!',
+        `התפנה מקום ביום ${dayName} (${formattedDate}) בשעה ${apptToCancel.time}. רוצו לתפוס!`
+      );
     }
   };
 
@@ -105,6 +125,11 @@ function App() {
   const requestNotif = async () => {
     const granted = await notificationService.requestPermission();
     if (granted) setNotifPermission('granted');
+    else showToast('הרשאת התראות נדחתה');
+  };
+
+  const testNotif = () => {
+    notificationService.sendLocalNotification('בדיקת מערכת 🚀', 'אם אתה רואה את זה, ההתראות עובדות מצוין!');
   };
 
   if (loading) {
@@ -131,21 +156,29 @@ function App() {
       <Header user={user} onLogout={handleLogout} title={settings.shopName} />
       
       <main className="max-w-md mx-auto p-4 pt-2">
-        {/* Notification Permission Banner */}
-        {notifPermission !== 'granted' && (
-          <div className="mb-6 glass-panel p-4 rounded-2xl border-gold-500/30 animate-in fade-in slide-in-from-top-4">
+        <div className="mb-6 glass-panel p-4 rounded-2xl border-gold-500/30">
              <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-full bg-gold-500/20 flex items-center justify-center text-gold-500">
-                  <Bell size={20} className="animate-bounce" />
+                  <Bell size={20} className={notifPermission !== 'granted' ? 'animate-bounce' : ''} />
                 </div>
                 <div className="flex-1">
-                   <h4 className="text-sm font-bold text-white">הפעל התראות</h4>
-                   <p className="text-[11px] text-gray-400">קבל תזכורת יום לפני התור ועדכון על תורים שהתפנו</p>
+                   <h4 className="text-sm font-bold text-white">
+                     {notifPermission === 'granted' ? 'התראות פעילות' : 'הפעל התראות'}
+                   </h4>
+                   <p className="text-[11px] text-gray-400">
+                     קבל עדכונים בזמן אמת על תורים שהתפנו
+                   </p>
                 </div>
-                <Button onClick={requestNotif} variant="primary" className="!py-1.5 !px-3 !text-xs">אשר</Button>
+                {notifPermission !== 'granted' ? (
+                  <Button onClick={requestNotif} variant="primary" className="!py-1.5 !px-3 !text-xs">אשר</Button>
+                ) : (
+                  <Button onClick={testNotif} variant="outline" className="!py-1.5 !px-3 !text-xs flex items-center gap-1">
+                    <Smartphone size={12} />
+                    בדוק
+                  </Button>
+                )}
              </div>
-          </div>
-        )}
+        </div>
 
         {user.role === UserRole.CLIENT ? (
           <ClientBooking 
@@ -167,10 +200,6 @@ function App() {
       </main>
       
       <InstallPWA />
-
-      <footer className="text-center py-8 text-gray-700 text-xs">
-        <p>BarberBook Pro &copy; {new Date().getFullYear()}</p>
-      </footer>
     </div>
   );
 }

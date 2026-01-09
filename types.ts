@@ -12,15 +12,21 @@ export interface Appointment {
   isReadByAdmin: boolean;
 }
 
-export interface AppNotification {
+export interface BroadcastNotification {
   id: string;
   title: string;
-  message: string;
-  timestamp: number;
-  type: 'new_booking' | 'cancellation' | 'reminder';
-  relatedId?: string;
+  body: string;
+  createdAt: number;
+  type: 'slot_opened' | 'general';
 }
 
+export interface Service {
+  id: string;
+  name: string;
+  price: number;
+}
+
+// Added export for TimeRange to fix import errors in AdminDashboard.tsx
 export interface TimeRange {
   start: string;
   end: string;
@@ -31,15 +37,9 @@ export interface DaySchedule {
   timeRanges: TimeRange[];
 }
 
-export interface Service {
-  id: string;
-  name: string;
-  price: number;
-}
-
 export interface BusinessSettings {
   shopName: string;
-  shopPhone: string; // Added shop phone for WhatsApp
+  shopPhone: string;
   slotDurationMinutes: number;
   services: Service[];
   calendar: Record<string, DaySchedule>;
