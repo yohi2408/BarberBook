@@ -18,11 +18,31 @@ export const notificationService = {
     if (!('serviceWorker' in navigator)) return null;
     
     try {
-      const registration = await navigator.serviceWorker.register('/BarberBook/sw.js', {
-        scope: '/BarberBook/'
-      });
-      await registration.update();
-      return registration;
+      const candidates = [
+        '/sw.js',
+        'sw.js',
+        './sw.js',
+        '/firebase-messaging-sw.js',
+        '/BarberBook/sw.js'
+      ];
+
+      let lastError = null;
+      for (const swPath of candidates) {
+        try {
+          console.log('Trying to register service worker at', swPath);
+          const registration = await navigator.serviceWorker.register(swPath, { scope: './' });
+          await registration.update();
+          console.log('Service Worker registered at', swPath, 'with scope', registration.scope);
+          return registration;
+        } catch (err) {
+          lastError = err;
+          console.warn('Failed to register SW at', swPath, err && err.message ? err.message : err);
+          // try next
+        }
+      }
+
+      console.error('All SW registration attempts failed', lastError);
+      return null;
     } catch (error) {
       console.error('SW registration failed:', error);
       return null;
