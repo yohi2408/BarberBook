@@ -1,3 +1,4 @@
+
 name: Deploy to GitHub Pages
 
 on:
@@ -17,7 +18,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          # Removed cache: 'npm' because package-lock.json is not present
       - run: npm install
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
