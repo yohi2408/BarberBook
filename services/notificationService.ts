@@ -8,7 +8,7 @@ export const notificationService = {
 
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
-      this.registerServiceWorker();
+      await this.registerServiceWorker();
       return true;
     }
     return false;
@@ -20,36 +20,45 @@ export const notificationService = {
         const registration = await navigator.serviceWorker.register('/BarberBook/sw.js', {
           scope: '/BarberBook/'
         });
-        console.log('Service Worker registered with scope:', registration.scope);
+        console.log('Service Worker registered:', registration.scope);
+        return registration;
       } catch (error) {
         console.error('Service Worker registration failed:', error);
       }
     }
+    return null;
   },
 
   async sendLocalNotification(title: string, body: string) {
     if (Notification.permission === 'granted') {
-      const registration = await navigator.serviceWorker.ready;
-      registration.showNotification(title, {
-        body,
-        icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-        badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-      });
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        // Fix: Added 'as any' to bypass strict property checking for 'vibrate' which might be missing from the environment's NotificationOptions type definition
+        registration.showNotification(title, {
+          body,
+          icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+          badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+          vibrate: [200, 100, 200],
+          tag: 'barber-notif-' + Date.now(),
+        } as any);
+      } catch (e) {
+        // Fallback for non-SW environments
+        new Notification(title, { body });
+      }
     }
   },
 
-  // Logic to notify when a slot opens
   notifySlotOpened(date: string, time: string) {
-    // In a production app with a backend, this would trigger a push to all users.
-    // Here we simulate the trigger.
-    const dayName = new Date(date).toLocaleDateString('he-IL', { weekday: 'long' });
+    const dateObj = new Date(date);
+    const dayName = dateObj.toLocaleDateString('he-IL', { weekday: 'long' });
+    const formattedDate = dateObj.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
+    
     this.sendLocalNotification(
-      '🎉 תור התפנה!',
-      `התפנה מקום חדש ביום ${dayName} (${date}) בשעה ${time}. כל הקודם זוכה!`
+      '🎉 תור חדש התפנה!',
+      `התפנה מקום ביום ${dayName} (${formattedDate}) בשעה ${time}. רוץ לתפוס!`
     );
   },
 
-  // Logic for the day-before reminder
   checkAndScheduleReminders(appointments: any[], currentUserPhone: string) {
     const today = new Date();
     const tomorrow = new Date(today);
@@ -64,8 +73,8 @@ export const notificationService = {
     if (myTomorrowAppt) {
       const dayName = new Date(myTomorrowAppt.date).toLocaleDateString('he-IL', { weekday: 'long' });
       this.sendLocalNotification(
-        '⏰ תזכורת לתור מחר',
-        `היי, מזכירים לך את התור שלך למחר, יום ${dayName}, בשעה ${myTomorrowAppt.time}. נתראה!`
+        '⏰ תזכורת לתור שלך מחר',
+        `היי, מזכירים לך את התור ביום ${dayName} בשעה ${myTomorrowAppt.time}. מחכים לך!`
       );
     }
   }
