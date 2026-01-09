@@ -31,7 +31,6 @@ function App() {
       if (lastNotifId === notif.id) return;
       sessionStorage.setItem('last_notif_id', notif.id);
       
-      // Actually trigger the system notification
       notificationService.sendLocalNotification(notif.title, notif.body);
     });
 
@@ -52,9 +51,12 @@ function App() {
       }
       setLoading(false);
       
-      // Initialize SW registration right away
-      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-        notificationService.registerServiceWorker();
+      // Auto-register and update permission state
+      if (typeof Notification !== 'undefined') {
+        setNotifPermission(Notification.permission);
+        if (Notification.permission === 'granted') {
+          notificationService.registerServiceWorker();
+        }
       }
     };
     init();
@@ -121,7 +123,7 @@ function App() {
       setNotifPermission('granted');
       showToast('התראות הופעלו בהצלחה!');
     } else {
-      showToast('הרשאת התראות נדחתה', 'וודא שהגדרת התראות מופעלת בהגדרות האייפון לאתר זה');
+      showToast('הרשאת התראות נדחתה', 'יש לאשר ידנית בהגדרות האתר באייפון');
     }
   };
 
@@ -131,23 +133,15 @@ function App() {
       return;
     }
 
-    showToast('שולח בדיקה...', 'צא למסך הבית עכשיו כדי לראות את ההתראה!');
+    showToast('שולח בדיקה...', 'צא למסך הבית *עכשיו*!');
     
-    // Check if SW is ready
-    if ('serviceWorker' in navigator) {
-        const reg = await navigator.serviceWorker.ready;
-        if (!reg) {
-            showToast('שגיאה: ה-Service Worker לא מוכן');
-            return;
-        }
-    }
-
+    // Reduce timeout to 1 second for faster trigger on iOS
     setTimeout(() => {
       notificationService.sendLocalNotification(
         'בדיקת מערכת 🚀', 
         'מעולה! ההתראות עובדות גם כשהאפליקציה סגורה'
       );
-    }, 2000);
+    }, 1200);
   };
 
   if (loading) {

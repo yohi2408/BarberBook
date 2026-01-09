@@ -18,16 +18,12 @@ export const notificationService = {
     if (!('serviceWorker' in navigator)) return null;
     
     try {
-      // Logic to find the correct SW path regardless of environment
-      const swPath = window.location.pathname.includes('/BarberBook/') 
-        ? '/BarberBook/sw.js' 
-        : '/sw.js';
-        
-      const registration = await navigator.serviceWorker.register(swPath, {
-        scope: window.location.pathname.includes('/BarberBook/') ? '/BarberBook/' : '/'
+      // Use relative path for more reliability on GitHub Pages
+      const registration = await navigator.serviceWorker.register('sw.js', {
+        scope: './'
       });
       
-      // Force update if needed
+      // Ensure it's updated
       await registration.update();
       
       return registration;
@@ -42,23 +38,21 @@ export const notificationService = {
 
     try {
       if ('serviceWorker' in navigator) {
+        // Wait for service worker to be ready AND active
         const registration = await navigator.serviceWorker.ready;
         
-        // On iOS PWA, calling showNotification on the registration object is more reliable
-        if (registration) {
-          // Send message to SW to trigger notification (Bypasses some iOS thread locks)
-          if (registration.active) {
-            registration.active.postMessage({
-              type: 'SHOW_NOTIFICATION',
-              payload: { title, body }
-            });
-          } else {
-            // Fallback to standard method
-            await registration.showNotification(title, {
-              body,
-              icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-            });
-          }
+        if (registration.active) {
+          // Direct message is the most reliable way on iOS 17+
+          registration.active.postMessage({
+            type: 'SHOW_NOTIFICATION',
+            payload: { title, body }
+          });
+        } else {
+          // Fallback if not yet active
+          await registration.showNotification(title, {
+            body,
+            icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+          });
         }
       } else {
         new Notification(title, { body });
