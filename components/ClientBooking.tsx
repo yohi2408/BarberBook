@@ -165,6 +165,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
     
     const slotDuration = settings.slotDurationMinutes || 30;
 
+    // Added missing status and isReadByAdmin to correctly type the Appointment object
     const newAppointment: Appointment = {
       id: crypto.randomUUID(),
       customerName: user.fullName,
@@ -173,7 +174,9 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({
       time: selectedTime,
       duration: slotDuration, 
       serviceType: selectedService.name,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      status: 'pending',
+      isReadByAdmin: false
     };
     
     const success = await onBook(newAppointment);

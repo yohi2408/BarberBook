@@ -5,14 +5,25 @@ export interface Appointment {
   customerPhone: string;
   date: string; // YYYY-MM-DD
   time: string; // HH:mm
-  duration: number; // Duration in minutes (Taken from global settings)
+  duration: number; // Duration in minutes
   serviceType: string;
   createdAt: number;
+  status: 'pending' | 'confirmed' | 'cancelled';
+  isReadByAdmin: boolean;
+}
+
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  timestamp: number;
+  type: 'new_booking' | 'cancellation' | 'reminder';
+  relatedId?: string;
 }
 
 export interface TimeRange {
-  start: string; // HH:mm
-  end: string;   // HH:mm
+  start: string;
+  end: string;
 }
 
 export interface DaySchedule {
@@ -28,9 +39,10 @@ export interface Service {
 
 export interface BusinessSettings {
   shopName: string;
-  slotDurationMinutes: number; // Global duration for ALL appointments
-  services: Service[]; // List of available services
-  calendar: Record<string, DaySchedule>; // Key is YYYY-MM-DD. Replaces fixed weekly schedule.
+  shopPhone: string; // Added shop phone for WhatsApp
+  slotDurationMinutes: number;
+  services: Service[];
+  calendar: Record<string, DaySchedule>;
 }
 
 export enum UserRole {
@@ -47,25 +59,14 @@ export interface User {
   recoveryPin?: string;
 }
 
-export enum ViewMode {
-  AUTH = 'AUTH',
-  CLIENT = 'CLIENT',
-  ADMIN = 'ADMIN'
-}
-
-// Helper to create default day
-const defaultDaySchedule = (start: string, end: string): DaySchedule => ({
-  isWorking: true,
-  timeRanges: [{ start, end }]
-});
-
 export const DEFAULT_SETTINGS: BusinessSettings = {
   shopName: "BarberBook Pro",
-  slotDurationMinutes: 30, // Default 30 min per slot
+  shopPhone: "0500000000",
+  slotDurationMinutes: 30,
   services: [
     { id: '1', name: 'תספורת גברים', price: 60 },
     { id: '2', name: 'תספורת + זקן', price: 80 },
     { id: '3', name: 'סידור זקן', price: 30 }
   ],
-  calendar: {} // Start empty, admin must open days
+  calendar: {}
 };

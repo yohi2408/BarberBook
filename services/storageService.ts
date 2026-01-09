@@ -10,7 +10,9 @@ import {
   where, 
   setDoc,
   getDoc,
-  updateDoc
+  updateDoc,
+  orderBy,
+  limit
 } from 'firebase/firestore';
 import { Appointment, BusinessSettings, DEFAULT_SETTINGS, User, UserRole } from '../types';
 
@@ -19,20 +21,18 @@ const SETTINGS_COLLECTION = 'settings';
 const USERS_COLLECTION = 'users';
 const SETTINGS_DOC_ID = 'business_settings';
 
-// Cache for current session
 let currentUserCache: User | null = null;
 
-// Helper to convert HH:mm to minutes
 const timeToMinutes = (time: string): number => {
   const [hours, minutes] = time.split(':').map(Number);
   return hours * 60 + minutes;
 };
 
 export const storageService = {
-  // Appointments
   getAppointments: async (): Promise<Appointment[]> => {
     try {
-      const querySnapshot = await getDocs(collection(db, APPOINTMENTS_COLLECTION));
+      const q = query(collection(db, APPOINTMENTS_COLLECTION), orderBy('createdAt', 'desc'));
+      const querySnapshot = await getDocs(q);
       return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Appointment));
     } catch (e) {
       console.error("Error fetching appointments:", e);
@@ -42,40 +42,39 @@ export const storageService = {
 
   saveAppointment: async (appointment: Appointment): Promise<boolean> => {
     try {
-      // 1. Fetch ALL appointments for this date to check ranges
-      const q = query(
-        collection(db, APPOINTMENTS_COLLECTION), 
-        where("date", "==", appointment.date)
-      );
+      const q = query(collection(db, APPOINTMENTS_COLLECTION), where("date", "==", appointment.date));
       const querySnapshot = await getDocs(q);
       const existingAppts = querySnapshot.docs.map(doc => doc.data() as Appointment);
 
-      // New Appointment Range
       const newStart = timeToMinutes(appointment.time);
       const newEnd = newStart + appointment.duration;
 
-      // Check for conflicts
       const hasConflict = existingAppts.some(existing => {
          const existStart = timeToMinutes(existing.time);
-         // Fallback to 30 min if duration is missing in old data
          const existDuration = existing.duration || 30; 
          const existEnd = existStart + existDuration;
-
-         // Overlap formula: (StartA < EndB) and (EndA > StartB)
          return (newStart < existEnd && newEnd > existStart);
       });
       
-      if (hasConflict) {
-        return false; // Taken
-      }
+      if (hasConflict) return false;
 
-      // 2. Save
+      // Extract id to avoid saving it as a field if we want Firestore to generate it
       const { id, ...data } = appointment;
+      // We rely on the caller to provide status and isReadByAdmin if they are part of the Appointment type
       await addDoc(collection(db, APPOINTMENTS_COLLECTION), data);
       return true;
     } catch (e) {
       console.error("Error saving appointment:", e);
       return false;
+    }
+  },
+
+  markAsRead: async (id: string): Promise<void> => {
+    try {
+      const docRef = doc(db, APPOINTMENTS_COLLECTION, id);
+      await updateDoc(docRef, { isReadByAdmin: true });
+    } catch (e) {
+      console.error("Error marking as read:", e);
     }
   },
 
@@ -87,27 +86,18 @@ export const storageService = {
     }
   },
 
-  // Settings
   getSettings: async (): Promise<BusinessSettings> => {
     try {
       const docRef = doc(db, SETTINGS_COLLECTION, SETTINGS_DOC_ID);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const data = docSnap.data() as BusinessSettings;
-        // Merge with default settings to ensure 'calendar' field exists
-        return { 
-            ...DEFAULT_SETTINGS, 
-            ...data,
-            // Ensure calendar is object if missing
-            calendar: data.calendar || {} 
-        };
+        return { ...DEFAULT_SETTINGS, ...data };
       } else {
-        // Initialize default settings in cloud if not exist
         await setDoc(docRef, DEFAULT_SETTINGS);
         return DEFAULT_SETTINGS;
       }
     } catch (e) {
-      console.error("Error fetching settings:", e);
       return DEFAULT_SETTINGS;
     }
   },
@@ -120,97 +110,81 @@ export const storageService = {
     }
   },
 
-  // Auth
-  register: async (user: Omit<User, 'id' | 'role'>): Promise<{ success: boolean, message?: string }> => {
+  login: async (identifier: string, password: string, remember: boolean = false): Promise<User | null> => {
+    const cleanIdentifier = identifier.trim();
+    const cleanPassword = password.trim();
+    
+    if (cleanIdentifier === 'admin' && cleanPassword === 'admin123') {
+       const adminUser: User = { 
+         id: 'admin', fullName: 'מנהל ראשי', password: '', phoneNumber: '0000000000', role: UserRole.ADMIN 
+       };
+       currentUserCache = adminUser;
+       if (remember) localStorage.setItem('current_user', JSON.stringify(adminUser));
+       else sessionStorage.setItem('current_user', JSON.stringify(adminUser));
+       return adminUser;
+    }
+
+    const q = query(collection(db, USERS_COLLECTION), where("phoneNumber", "==", cleanIdentifier));
+    const querySnapshot = await getDocs(q);
+    if (querySnapshot.empty) return null;
+
+    const userDoc = querySnapshot.docs[0];
+    const userData = userDoc.data() as User;
+    if (userData.password === cleanPassword) {
+      const user = { ...userData, id: userDoc.id };
+      currentUserCache = user;
+      const storage = remember ? localStorage : sessionStorage;
+      storage.setItem('current_user', JSON.stringify(user));
+      return user;
+    }
+    return null;
+  },
+
+  // Added register method for Auth component
+  register: async (userData: { password: string; fullName: string; phoneNumber: string; recoveryPin: string }): Promise<{ success: boolean; message?: string }> => {
     try {
-      // Check if phone exists
-      const q = query(collection(db, USERS_COLLECTION), where("phoneNumber", "==", user.phoneNumber));
+      const q = query(collection(db, USERS_COLLECTION), where("phoneNumber", "==", userData.phoneNumber));
       const querySnapshot = await getDocs(q);
-      
       if (!querySnapshot.empty) {
-        return { success: false, message: 'מספר טלפון זה כבר רשום במערכת' };
+        return { success: false, message: 'משתמש עם מספר טלפון זה כבר קיים' };
       }
 
-      const newUser: User = {
-        ...user,
-        id: crypto.randomUUID(), 
+      const newUser: Omit<User, 'id'> = {
+        fullName: userData.fullName,
+        phoneNumber: userData.phoneNumber,
+        password: userData.password,
+        recoveryPin: userData.recoveryPin,
         role: UserRole.CLIENT
       };
 
       await addDoc(collection(db, USERS_COLLECTION), newUser);
       return { success: true };
     } catch (e) {
-      console.error("Register error:", e);
-      return { success: false, message: 'שגיאת רשת' };
+      console.error("Error registering user:", e);
+      return { success: false, message: 'שגיאה בהרשמה' };
     }
   },
 
-  resetPassword: async (phoneNumber: string, recoveryPin: string, newPassword: string): Promise<{ success: boolean, message?: string }> => {
+  // Added resetPassword method for Auth component
+  resetPassword: async (phoneNumber: string, recoveryPin: string, newPassword: string): Promise<{ success: boolean; message?: string }> => {
     try {
-        const q = query(collection(db, USERS_COLLECTION), where("phoneNumber", "==", phoneNumber));
-        const querySnapshot = await getDocs(q);
-        
-        if (querySnapshot.empty) {
-            return { success: false, message: 'מספר טלפון לא נמצא' };
-        }
-
-        const userDoc = querySnapshot.docs[0];
-        const userData = userDoc.data() as User;
-
-        if (userData.recoveryPin !== recoveryPin) {
-            return { success: false, message: 'קוד שחזור שגוי' };
-        }
-
-        await updateDoc(doc(db, USERS_COLLECTION, userDoc.id), { password: newPassword });
-        return { success: true };
-    } catch (e) {
-        console.error("Reset password error:", e);
-        return { success: false, message: 'שגיאה באיפוס הסיסמא' };
-    }
-  },
-
-  login: async (identifier: string, password: string, remember: boolean = false): Promise<User | null> => {
-    try {
-      const cleanIdentifier = identifier.trim();
-      const cleanPassword = password.trim();
-      
-      // Special Admin Check 
-      if (cleanIdentifier === 'admin' && cleanPassword === 'admin123') {
-         const adminUser: User = { 
-           id: 'admin', 
-           fullName: 'מנהל ראשי', 
-           password: '', 
-           phoneNumber: '0000000000', 
-           role: UserRole.ADMIN 
-         };
-         currentUserCache = adminUser;
-         if (remember) localStorage.setItem('current_user', JSON.stringify(adminUser));
-         else sessionStorage.setItem('current_user', JSON.stringify(adminUser));
-         return adminUser;
-      }
-
-      // Query User by Phone
-      const q = query(collection(db, USERS_COLLECTION), where("phoneNumber", "==", cleanIdentifier));
+      const q = query(
+        collection(db, USERS_COLLECTION), 
+        where("phoneNumber", "==", phoneNumber),
+        where("recoveryPin", "==", recoveryPin)
+      );
       const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) return null;
+      if (querySnapshot.empty) {
+        return { success: false, message: 'מספר טלפון או קוד שחזור שגויים' };
+      }
 
       const userDoc = querySnapshot.docs[0];
-      const userData = userDoc.data() as User;
-
-      if (userData.password === cleanPassword) {
-        const user = { ...userData, id: userDoc.id };
-        currentUserCache = user;
-        
-        const storage = remember ? localStorage : sessionStorage;
-        storage.setItem('current_user', JSON.stringify(user));
-        
-        return user;
-      }
-      return null;
+      const docRef = doc(db, USERS_COLLECTION, userDoc.id);
+      await updateDoc(docRef, { password: newPassword });
+      return { success: true };
     } catch (e) {
-      console.error("Login error:", e);
-      return null;
+      console.error("Error resetting password:", e);
+      return { success: false, message: 'שגיאה באיפוס הסיסמא' };
     }
   },
 
@@ -222,19 +196,7 @@ export const storageService = {
 
   getCurrentUser: (): User | null => {
     if (currentUserCache) return currentUserCache;
-    
-    const sessionData = sessionStorage.getItem('current_user');
-    if (sessionData) {
-      currentUserCache = JSON.parse(sessionData);
-      return currentUserCache;
-    }
-
-    const localData = localStorage.getItem('current_user');
-    if (localData) {
-      currentUserCache = JSON.parse(localData);
-      return currentUserCache;
-    }
-
-    return null;
+    const sessionData = sessionStorage.getItem('current_user') || localStorage.getItem('current_user');
+    return sessionData ? JSON.parse(sessionData) : null;
   }
 };
