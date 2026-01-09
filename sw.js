@@ -12,8 +12,10 @@ self.addEventListener('activate', (event) => {
 
 // The core fix: Handle the delay INSIDE the service worker
 self.addEventListener('message', (event) => {
+  console.log('[SW MESSAGE] Received:', event.data);
   if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
     const { title, body, delay } = event.data.payload;
+    console.log('[SW] Processing notification:', { title, body, delay });
     
     const show = () => {
       const options = {
@@ -25,15 +27,19 @@ self.addEventListener('message', (event) => {
         renotify: true,
         data: { url: '/BarberBook/' }
       };
+      console.log('[SW] Showing notification:', title);
       self.registration.showNotification(title, options);
     };
 
     if (delay) {
       // If there's a delay, we wait here. SW has a longer life span on backgrounding than the UI thread.
+      console.log('[SW] Scheduling notification after', delay, 'ms');
       setTimeout(show, delay);
     } else {
       show();
     }
+  } else {
+    console.log('[SW] Message type not SHOW_NOTIFICATION, ignoring');
   }
 });
 

@@ -50,18 +50,34 @@ export const notificationService = {
   },
 
   async sendLocalNotification(title: string, body: string, delay: number = 0) {
-    if (Notification.permission !== 'granted') return;
+    if (Notification.permission !== 'granted') {
+      console.warn('Notification permission not granted');
+      return;
+    }
 
     try {
       const registration = await navigator.serviceWorker.ready;
+      console.log('[CLIENT] Service Worker ready:', registration);
+      console.log('[CLIENT] Active controller:', navigator.serviceWorker.controller);
+      console.log('[CLIENT] Active SW:', registration.active);
+
       if (registration.active) {
         // Send the message with the delay so the SW handles the timing
+        console.log('[CLIENT] Posting message to active SW:', { title, body, delay });
         registration.active.postMessage({
           type: 'SHOW_NOTIFICATION',
           payload: { title, body, delay }
         });
+      } else if (navigator.serviceWorker.controller) {
+        // Use controller as fallback
+        console.log('[CLIENT] Using controller to post message');
+        navigator.serviceWorker.controller.postMessage({
+          type: 'SHOW_NOTIFICATION',
+          payload: { title, body, delay }
+        });
       } else {
-        // Fallback for immediate only
+        // Fallback to direct showNotification
+        console.log('[CLIENT] No active SW, using fallback showNotification');
         await registration.showNotification(title, { body });
       }
     } catch (e) {
