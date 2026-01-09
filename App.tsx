@@ -37,7 +37,7 @@ function App() {
       if (lastNotifId === notif.id) return;
       sessionStorage.setItem('last_notif_id', notif.id);
       
-      addLog(`התקבלה התראה מהשרת: ${notif.title}`);
+      addLog(`התקבלה התראה: ${notif.title}`);
       notificationService.sendLocalNotification(notif.title, notif.body);
     });
 
@@ -61,9 +61,8 @@ function App() {
       if (typeof Notification !== 'undefined') {
         setNotifPermission(Notification.permission);
         if (Notification.permission === 'granted') {
-          addLog('מנסה לרשום Service Worker...');
           notificationService.registerServiceWorker().then(reg => {
-            if (reg) addLog('Service Worker רשום ומוכן');
+            if (reg) addLog('Service Worker פעיל');
           });
         }
       }
@@ -127,15 +126,14 @@ function App() {
   };
 
   const requestNotif = async () => {
-    addLog('מבקש הרשאת התראות...');
     const granted = await notificationService.requestPermission();
     if (granted) {
       setNotifPermission('granted');
-      addLog('הרשאה התקבלה!');
+      addLog('הרשאת התראות אושרה');
       showToast('התראות הופעלו בהצלחה!');
     } else {
-      addLog('הרשאה נדחתה או נכשלה');
-      showToast('הרשאת התראות נדחתה', 'יש לאשר ידנית בהגדרות האתר באייפון');
+      addLog('הרשאת התראות נדחתה');
+      showToast('הרשאת התראות נדחתה', 'בדוק בהגדרות האייפון');
     }
   };
 
@@ -145,16 +143,16 @@ function App() {
       return;
     }
 
-    addLog('מפעיל טיימר לבדיקת התראה (1.5 שניות)...');
-    showToast('שולח בדיקה...', 'צא למסך הבית *עכשיו*!');
+    addLog('שולח פקודת התראה מושהית ל-SW...');
+    showToast('בדיקה נשלחה', 'צא למסך הבית עכשיו!');
     
-    setTimeout(() => {
-      addLog('שולח פקודת התראה ל-Service Worker');
-      notificationService.sendLocalNotification(
-        'בדיקת מערכת 🚀', 
-        'מעולה! ההתראות עובדות גם כשהאפליקציה סגורה'
-      );
-    }, 1500);
+    // We send the delay (2000ms) to the SW. 
+    // The SW will wait and then trigger the notification even if the UI thread is frozen.
+    notificationService.sendLocalNotification(
+      'בדיקת מערכת 🚀', 
+      'ההתראות עובדות! עכשיו תקבל עדכון כשתורים יתפנו.',
+      2000
+    );
   };
 
   if (loading) {
@@ -223,7 +221,6 @@ function App() {
           />
         )}
 
-        {/* Debug Console - Only visible in dev or during test */}
         {debugLog && (
           <div className="mt-10 p-4 bg-black/50 rounded-xl border border-white/10">
             <h5 className="text-[10px] text-gray-500 font-mono mb-2 uppercase tracking-widest">Debug Logs</h5>

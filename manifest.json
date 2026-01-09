@@ -3,6 +3,7 @@
   "name": "BarberBook Pro",
   "short_name": "BarberBook",
   "description": "BarberBook Appointment System",
+  "id": "/BarberBook/",
   "start_url": "/BarberBook/",
   "scope": "/BarberBook/",
   "display": "standalone",

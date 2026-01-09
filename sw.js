@@ -1,47 +1,39 @@
 
-// Service Worker for BarberBook Pro - v4
-const CACHE_NAME = 'barberbook-v4';
+// Service Worker for BarberBook Pro - v5
+const CACHE_NAME = 'barberbook-v5';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
-  console.log('SW Installed');
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    Promise.all([
-      self.clients.claim(),
-      caches.keys().then((cacheNames) => {
-        return Promise.all(
-          cacheNames.map((cacheName) => {
-            if (cacheName !== CACHE_NAME) return caches.delete(cacheName);
-          })
-        );
-      })
-    ])
-  );
-  console.log('SW Activated and Claimed');
+  event.waitUntil(self.clients.claim());
 });
 
-// Message listener for local notifications
+// The core fix: Handle the delay INSIDE the service worker
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
-    const { title, body } = event.data.payload;
+    const { title, body, delay } = event.data.payload;
     
-    const options = {
-      body: body,
-      icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-      badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-      vibrate: [200, 100, 200],
-      tag: 'barber-notif-' + Date.now(),
-      data: {
-        url: '/BarberBook/'
-      }
+    const show = () => {
+      const options = {
+        body: body,
+        icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+        badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+        vibrate: [200, 100, 200],
+        tag: 'barber-notif',
+        renotify: true,
+        data: { url: '/BarberBook/' }
+      };
+      self.registration.showNotification(title, options);
     };
 
-    event.waitUntil(
-      self.registration.showNotification(title, options)
-    );
+    if (delay) {
+      // If there's a delay, we wait here. SW has a longer life span on backgrounding than the UI thread.
+      setTimeout(show, delay);
+    } else {
+      show();
+    }
   }
 });
 
