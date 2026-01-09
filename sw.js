@@ -1,28 +1,30 @@
 
+// Service Worker for BarberBook Pro
+const CACHE_NAME = 'barberbook-v2';
+
 self.addEventListener('install', (event) => {
-  console.log('SW: Install Event');
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('SW: Activate Event');
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    Promise.all([
+      self.clients.claim(),
+      // Clear old caches
+      caches.keys().then((cacheNames) => {
+        return Promise.all(
+          cacheNames.map((cacheName) => {
+            if (cacheName !== CACHE_NAME) {
+              return caches.delete(cacheName);
+            }
+          })
+        );
+      })
+    ])
+  );
 });
 
-// Listener for messages from the main app (used for the "Test" button)
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
-    const { title, body, options } = event.data.payload;
-    self.registration.showNotification(title, {
-      body,
-      ...options,
-      icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-      badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-      vibrate: [200, 100, 200]
-    });
-  }
-});
-
+// Handle push notifications
 self.addEventListener('push', (event) => {
   let data = { title: 'BarberBook Pro', body: 'יש לך עדכון חדש!' };
   try {
@@ -30,7 +32,8 @@ self.addEventListener('push', (event) => {
       data = event.data.json();
     }
   } catch (e) {
-    console.error('SW: Push data was not JSON', e);
+    console.log('Push data is text:', event.data?.text());
+    data = { title: 'BarberBook Pro', body: event.data?.text() || data.body };
   }
 
   const options = {
@@ -40,7 +43,10 @@ self.addEventListener('push', (event) => {
     vibrate: [200, 100, 200],
     data: {
       url: self.registration.scope
-    }
+    },
+    actions: [
+      { action: 'open', title: 'פתח אפליקציה' }
+    ]
   };
 
   event.waitUntil(
@@ -48,14 +54,27 @@ self.addEventListener('push', (event) => {
   );
 });
 
+// Handle message from main thread (for local testing)
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
+    const { title, body } = event.data.payload;
+    self.registration.showNotification(title, {
+      body,
+      icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+      badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+      vibrate: [200, 100, 200]
+    });
+  }
+});
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   event.waitUntil(
-    clients.matchAll({ type: 'window' }).then((clientList) => {
-      for (const client of clientList) {
-        if (client.url === '/' && 'focus' in client) return client.focus();
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      if (clientList.length > 0) {
+        return clientList[0].focus();
       }
-      if (clients.openWindow) return clients.openWindow(event.notification.data?.url || '/');
+      return clients.openWindow(self.registration.scope);
     })
   );
 });

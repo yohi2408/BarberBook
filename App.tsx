@@ -23,7 +23,6 @@ function App() {
   
   const [toast, setToast] = useState({ visible: false, message: '', subMessage: '' });
 
-  // Real-time Notification Listener
   useEffect(() => {
     if (!user) return;
 
@@ -31,6 +30,8 @@ function App() {
       const lastNotifId = sessionStorage.getItem('last_notif_id');
       if (lastNotifId === notif.id) return;
       sessionStorage.setItem('last_notif_id', notif.id);
+      
+      // Actually trigger the system notification
       notificationService.sendLocalNotification(notif.title, notif.body);
     });
 
@@ -50,13 +51,13 @@ function App() {
         setSettings(sets);
       }
       setLoading(false);
+      
+      // Initialize SW registration right away
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        notificationService.registerServiceWorker();
+      }
     };
     init();
-    
-    // Auto-register SW if granted
-    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      notificationService.registerServiceWorker();
-    }
   }, []);
 
   const showToast = (message: string, subMessage: string = '') => {
@@ -120,18 +121,31 @@ function App() {
       setNotifPermission('granted');
       showToast('התראות הופעלו בהצלחה!');
     } else {
-      showToast('הרשאת התראות נדחתה');
+      showToast('הרשאת התראות נדחתה', 'וודא שהגדרת התראות מופעלת בהגדרות האייפון לאתר זה');
     }
   };
 
   const testNotif = async () => {
-    // We notify user to exit app for iOS
-    showToast('שולח בדיקה...', 'צא למסך הבית ב-3 שניות הקרובות!');
+    if (notifPermission !== 'granted') {
+      showToast('חובה לאשר התראות קודם');
+      return;
+    }
+
+    showToast('שולח בדיקה...', 'צא למסך הבית עכשיו כדי לראות את ההתראה!');
     
-    setTimeout(async () => {
-      await notificationService.sendLocalNotification(
+    // Check if SW is ready
+    if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        if (!reg) {
+            showToast('שגיאה: ה-Service Worker לא מוכן');
+            return;
+        }
+    }
+
+    setTimeout(() => {
+      notificationService.sendLocalNotification(
         'בדיקת מערכת 🚀', 
-        'אם אתה רואה את זה, ההתראות עובדות מצוין!'
+        'מעולה! ההתראות עובדות גם כשהאפליקציה סגורה'
       );
     }, 2000);
   };
@@ -160,21 +174,21 @@ function App() {
       <Header user={user} onLogout={handleLogout} title={settings.shopName} />
       
       <main className="max-w-md mx-auto p-4 pt-2">
-        <div className="mb-6 glass-panel p-4 rounded-2xl border-gold-500/30">
+        <div className="mb-6 glass-panel p-4 rounded-2xl border-gold-500/30 shadow-lg">
              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-full bg-gold-500/20 flex items-center justify-center text-gold-500">
+                <div className="w-10 h-10 rounded-full bg-gold-500/20 flex items-center justify-center text-gold-500 border border-gold-500/20">
                   <Bell size={20} className={notifPermission !== 'granted' ? 'animate-bounce' : ''} />
                 </div>
                 <div className="flex-1">
                    <h4 className="text-sm font-bold text-white">
-                     {notifPermission === 'granted' ? 'התראות פעילות' : 'הפעל התראות'}
+                     {notifPermission === 'granted' ? 'מערכת התראות פעילה' : 'הפעל התראות'}
                    </h4>
                    <p className="text-[11px] text-gray-400">
-                     {notifPermission === 'granted' ? 'מערכת ההתראות מחוברת' : 'קבל עדכונים על תורים שהתפנו'}
+                     {notifPermission === 'granted' ? 'תקבל עדכון כשתורים יתפנו' : 'לחץ כדי לאשר קבלת הודעות'}
                    </p>
                 </div>
                 {notifPermission !== 'granted' ? (
-                  <Button onClick={requestNotif} variant="primary" className="!py-1.5 !px-3 !text-xs">אשר</Button>
+                  <Button onClick={requestNotif} variant="primary" className="!py-1.5 !px-3 !text-xs">הפעל</Button>
                 ) : (
                   <Button onClick={testNotif} variant="outline" className="!py-1.5 !px-3 !text-xs flex items-center gap-1">
                     <Smartphone size={12} />

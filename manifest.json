@@ -6,6 +6,7 @@
   "start_url": "/BarberBook/",
   "scope": "/BarberBook/",
   "display": "standalone",
+  "display_override": ["standalone", "fullscreen"],
   "background_color": "#050505",
   "theme_color": "#050505",
   "orientation": "portrait",
