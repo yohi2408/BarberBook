@@ -2,13 +2,11 @@
 export const notificationService = {
   async requestPermission() {
     if (!('Notification' in window)) {
-      console.warn('This browser does not support notifications');
+      alert('הדפדפן הזה לא תומך בהתראות. באייפון - וודא שהוספת למסך הבית!');
       return false;
     }
 
     const permission = await Notification.requestPermission();
-    console.log('Notification permission status:', permission);
-    
     if (permission === 'granted') {
       await this.registerServiceWorker();
       return true;
@@ -19,12 +17,21 @@ export const notificationService = {
   async registerServiceWorker() {
     if ('serviceWorker' in navigator) {
       try {
-        // Ensure we are using the correct base path for the Service Worker
-        const swPath = './sw.js';
-        const registration = await navigator.serviceWorker.register(swPath, {
-          scope: './'
+        // Use an absolute-ish path for the base URL
+        const swUrl = '/BarberBook/sw.js';
+        const registration = await navigator.serviceWorker.register(swUrl, {
+          scope: '/BarberBook/'
         });
-        console.log('Service Worker registered with scope:', registration.scope);
+        
+        // Wait for it to be active
+        if (registration.installing) {
+            await new Promise((resolve) => {
+                registration.installing?.addEventListener('statechange', (e: any) => {
+                    if (e.target.state === 'activated') resolve(true);
+                });
+            });
+        }
+        
         return registration;
       } catch (error) {
         console.error('Service Worker registration failed:', error);
@@ -35,36 +42,36 @@ export const notificationService = {
 
   async sendLocalNotification(title: string, body: string) {
     if (Notification.permission !== 'granted') {
-      console.warn('Cannot send notification: Permission is', Notification.permission);
+      console.warn('Notification permission not granted');
       return;
     }
 
     const options = {
       body,
-      icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-      badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-      vibrate: [200, 100, 200],
-      tag: 'barber-notif-general',
-      renotify: true, // This allows the same tag to trigger a new vibration/sound
-      requireInteraction: true,
-      data: {
-        url: window.location.href
-      }
+      tag: 'barber-notif-' + Date.now(),
+      renotify: true,
+      data: { url: window.location.href }
     };
 
     try {
-      // On iOS PWAs, showNotification through ServiceWorker is the ONLY reliable way
       if ('serviceWorker' in navigator) {
         const registration = await navigator.serviceWorker.ready;
+        
+        // Method 1: standard showNotification
         if (registration && registration.showNotification) {
           await registration.showNotification(title, options as any);
-          console.log('Notification sent successfully via Service Worker');
-          return;
         }
+        
+        // Method 2: Message the SW (More reliable for some iOS versions)
+        if (registration.active) {
+          registration.active.postMessage({
+            type: 'SHOW_NOTIFICATION',
+            payload: { title, body, options }
+          });
+        }
+      } else {
+        new Notification(title, options);
       }
-      
-      // Fallback for standard browsers
-      new Notification(title, options);
     } catch (e) {
       console.error('Failed to send notification:', e);
     }
@@ -80,25 +87,5 @@ export const notificationService = {
       '🎉 תור חדש התפנה!',
       `התפנה מקום ביום ${dayName} (${formattedDate}) בשעה ${time}. רוץ לתפוס!`
     );
-  },
-
-  checkAndScheduleReminders(appointments: any[], currentUserPhone: string) {
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split('T')[0];
-
-    const myTomorrowAppt = appointments.find(a => 
-      a.customerPhone === currentUserPhone && 
-      a.date === tomorrowStr
-    );
-
-    if (myTomorrowAppt) {
-      const dayName = new Date(myTomorrowAppt.date).toLocaleDateString('he-IL', { weekday: 'long' });
-      this.sendLocalNotification(
-        '⏰ תזכורת לתור שלך מחר',
-        `היי, מזכירים לך את התור ביום ${dayName} בשעה ${myTomorrowAppt.time}. מחכים לך!`
-      );
-    }
   }
 };

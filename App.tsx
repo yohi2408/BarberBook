@@ -27,13 +27,9 @@ function App() {
   useEffect(() => {
     if (!user) return;
 
-    // Listen for broadcasted notifications (like slot openings)
     const unsubscribe = storageService.onNotificationReceived((notif) => {
-      // Don't notify the person who triggered it (if we had that info)
-      // For now, simple deduplication using session storage
       const lastNotifId = sessionStorage.getItem('last_notif_id');
       if (lastNotifId === notif.id) return;
-
       sessionStorage.setItem('last_notif_id', notif.id);
       notificationService.sendLocalNotification(notif.title, notif.body);
     });
@@ -52,15 +48,12 @@ function App() {
         ]);
         setAppointments(appts);
         setSettings(sets);
-        
-        if (currentUser.role === UserRole.CLIENT) {
-          notificationService.checkAndScheduleReminders(appts, currentUser.phoneNumber);
-        }
       }
       setLoading(false);
     };
     init();
     
+    // Auto-register SW if granted
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       notificationService.registerServiceWorker();
     }
@@ -105,7 +98,6 @@ function App() {
     showToast('התור בוטל בהצלחה');
     
     if (apptToCancel) {
-      // Logic: Broadcast to EVERYONE that a slot opened
       const dateObj = new Date(apptToCancel.date);
       const dayName = dateObj.toLocaleDateString('he-IL', { weekday: 'long' });
       const formattedDate = dateObj.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
@@ -124,12 +116,24 @@ function App() {
 
   const requestNotif = async () => {
     const granted = await notificationService.requestPermission();
-    if (granted) setNotifPermission('granted');
-    else showToast('הרשאת התראות נדחתה');
+    if (granted) {
+      setNotifPermission('granted');
+      showToast('התראות הופעלו בהצלחה!');
+    } else {
+      showToast('הרשאת התראות נדחתה');
+    }
   };
 
-  const testNotif = () => {
-    notificationService.sendLocalNotification('בדיקת מערכת 🚀', 'אם אתה רואה את זה, ההתראות עובדות מצוין!');
+  const testNotif = async () => {
+    // We notify user to exit app for iOS
+    showToast('שולח בדיקה...', 'צא למסך הבית ב-3 שניות הקרובות!');
+    
+    setTimeout(async () => {
+      await notificationService.sendLocalNotification(
+        'בדיקת מערכת 🚀', 
+        'אם אתה רואה את זה, ההתראות עובדות מצוין!'
+      );
+    }, 2000);
   };
 
   if (loading) {
@@ -166,7 +170,7 @@ function App() {
                      {notifPermission === 'granted' ? 'התראות פעילות' : 'הפעל התראות'}
                    </h4>
                    <p className="text-[11px] text-gray-400">
-                     קבל עדכונים בזמן אמת על תורים שהתפנו
+                     {notifPermission === 'granted' ? 'מערכת ההתראות מחוברת' : 'קבל עדכונים על תורים שהתפנו'}
                    </p>
                 </div>
                 {notifPermission !== 'granted' ? (
