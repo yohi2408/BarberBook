@@ -17,11 +17,17 @@ function App() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [settings, setSettings] = useState<BusinessSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
+  const [debugLog, setDebugLog] = useState<string>('');
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>(
     typeof Notification !== 'undefined' ? Notification.permission : 'default'
   );
   
   const [toast, setToast] = useState({ visible: false, message: '', subMessage: '' });
+
+  const addLog = (msg: string) => {
+    console.log(msg);
+    setDebugLog(prev => `${new Date().toLocaleTimeString()}: ${msg}\n${prev}`.slice(0, 500));
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -31,6 +37,7 @@ function App() {
       if (lastNotifId === notif.id) return;
       sessionStorage.setItem('last_notif_id', notif.id);
       
+      addLog(`התקבלה התראה מהשרת: ${notif.title}`);
       notificationService.sendLocalNotification(notif.title, notif.body);
     });
 
@@ -51,11 +58,13 @@ function App() {
       }
       setLoading(false);
       
-      // Auto-register and update permission state
       if (typeof Notification !== 'undefined') {
         setNotifPermission(Notification.permission);
         if (Notification.permission === 'granted') {
-          notificationService.registerServiceWorker();
+          addLog('מנסה לרשום Service Worker...');
+          notificationService.registerServiceWorker().then(reg => {
+            if (reg) addLog('Service Worker רשום ומוכן');
+          });
         }
       }
     };
@@ -118,11 +127,14 @@ function App() {
   };
 
   const requestNotif = async () => {
+    addLog('מבקש הרשאת התראות...');
     const granted = await notificationService.requestPermission();
     if (granted) {
       setNotifPermission('granted');
+      addLog('הרשאה התקבלה!');
       showToast('התראות הופעלו בהצלחה!');
     } else {
+      addLog('הרשאה נדחתה או נכשלה');
       showToast('הרשאת התראות נדחתה', 'יש לאשר ידנית בהגדרות האתר באייפון');
     }
   };
@@ -133,15 +145,16 @@ function App() {
       return;
     }
 
+    addLog('מפעיל טיימר לבדיקת התראה (1.5 שניות)...');
     showToast('שולח בדיקה...', 'צא למסך הבית *עכשיו*!');
     
-    // Reduce timeout to 1 second for faster trigger on iOS
     setTimeout(() => {
+      addLog('שולח פקודת התראה ל-Service Worker');
       notificationService.sendLocalNotification(
         'בדיקת מערכת 🚀', 
         'מעולה! ההתראות עובדות גם כשהאפליקציה סגורה'
       );
-    }, 1200);
+    }, 1500);
   };
 
   if (loading) {
@@ -208,6 +221,16 @@ function App() {
             onCancelAppointment={handleCancelAppointment}
             onUpdateSettings={handleUpdateSettings}
           />
+        )}
+
+        {/* Debug Console - Only visible in dev or during test */}
+        {debugLog && (
+          <div className="mt-10 p-4 bg-black/50 rounded-xl border border-white/10">
+            <h5 className="text-[10px] text-gray-500 font-mono mb-2 uppercase tracking-widest">Debug Logs</h5>
+            <pre className="text-[9px] text-gray-400 font-mono whitespace-pre-wrap leading-tight">
+              {debugLog}
+            </pre>
+          </div>
         )}
       </main>
       

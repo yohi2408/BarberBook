@@ -18,14 +18,13 @@ export const notificationService = {
     if (!('serviceWorker' in navigator)) return null;
     
     try {
-      // Use relative path for more reliability on GitHub Pages
-      const registration = await navigator.serviceWorker.register('sw.js', {
-        scope: './'
+      // Hardcoded path for GitHub Pages
+      const registration = await navigator.serviceWorker.register('/BarberBook/sw.js', {
+        scope: '/BarberBook/'
       });
       
-      // Ensure it's updated
+      console.log('SW registered successfully with scope:', registration.scope);
       await registration.update();
-      
       return registration;
     } catch (error) {
       console.error('SW registration failed:', error);
@@ -38,17 +37,18 @@ export const notificationService = {
 
     try {
       if ('serviceWorker' in navigator) {
-        // Wait for service worker to be ready AND active
         const registration = await navigator.serviceWorker.ready;
         
+        // Always try to use the SW to show the notification
+        // This is the ONLY way it works when the app is backgrounded on iOS
         if (registration.active) {
-          // Direct message is the most reliable way on iOS 17+
           registration.active.postMessage({
             type: 'SHOW_NOTIFICATION',
             payload: { title, body }
           });
+          console.log('Notification message sent to SW');
         } else {
-          // Fallback if not yet active
+          // Fallback if SW not active
           await registration.showNotification(title, {
             body,
             icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
