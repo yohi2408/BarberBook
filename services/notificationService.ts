@@ -13,8 +13,9 @@ export const notificationService = {
   async registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return null;
     try {
-      const registration = await navigator.serviceWorker.register('/BarberBook/sw.js', {
-        scope: '/BarberBook/'
+      // Registrating with a relative path so it finds sw.js in the same folder as index.html
+      const registration = await navigator.serviceWorker.register('./sw.js', {
+        scope: './'
       });
       return registration;
     } catch (error) {
@@ -30,7 +31,6 @@ export const notificationService = {
       const registration = await navigator.serviceWorker.ready;
       
       const show = () => {
-        // Method 1: Direct call
         registration.showNotification(title, {
           body: body,
           tag: 'barber-' + Date.now(),
@@ -38,7 +38,6 @@ export const notificationService = {
           vibrate: [200, 100, 200]
         } as any);
 
-        // Method 2: Wake up Service Worker via postMessage as backup
         if (registration.active) {
           registration.active.postMessage({
             type: 'SHOW_NOTIFICATION',
