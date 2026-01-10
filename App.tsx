@@ -25,7 +25,8 @@ function App() {
   const [toast, setToast] = useState({ visible: false, message: '', subMessage: '' });
   const processedNotifs = useRef<Set<string>>(new Set());
 
-  // Check for "Tomorrow" reminders automatically for the logged in client
+  // Task: Requirement 3 - "Day Before" Reminder
+  // We check this whenever the user opens the app or data updates
   useEffect(() => {
     if (!user || user.role !== UserRole.CLIENT || appointments.length === 0) return;
 
@@ -40,13 +41,16 @@ function App() {
         );
 
         if (myTomorrowAppt) {
-            const reminderKey = `reminded_${myTomorrowAppt.id}`;
-            if (!localStorage.getItem(reminderKey)) {
+            const reminderKey = `reminder_sent_${myTomorrowAppt.id}`;
+            const todayStr = format(new Date(), 'yyyy-MM-dd');
+            
+            // Send only once per appointment per day (to ensure they get it even if they open the app twice)
+            if (localStorage.getItem(reminderKey) !== todayStr) {
                 notificationService.sendLocalNotification(
                     'תזכורת לתור שלך מחר! 💈',
-                    `מחכים לך מחר בשעה ${myTomorrowAppt.time}. אל תשכח להגיע!`
+                    `מחכים לך מחר ביום ${format(tomorrow, 'EEEE', {locale: (window as any).he})} בשעה ${myTomorrowAppt.time}.`
                 );
-                localStorage.setItem(reminderKey, 'true');
+                localStorage.setItem(reminderKey, todayStr);
             }
         }
     };
@@ -54,18 +58,15 @@ function App() {
     checkReminders();
   }, [user, appointments]);
 
-  useEffect(() => {
-    if (typeof Notification !== 'undefined') {
-      setNotifPermission(Notification.permission);
-    }
-  }, []);
-
-  // Background listener for broadcasts (Slots opened / Cancelled)
+  // Task: Requirement 1 & 2 - Real-time Broadcasts (Slots & Cancellations)
   useEffect(() => {
     if (!user) return;
     const unsubscribe = storageService.onNotificationReceived((notif) => {
+      // Prevent duplicate processing of the same notification ID
       if (processedNotifs.current.has(notif.id)) return;
       processedNotifs.current.add(notif.id);
+      
+      // Trigger the local push notification
       notificationService.sendLocalNotification(notif.title, notif.body);
     });
     return () => unsubscribe();
@@ -132,7 +133,7 @@ function App() {
     setAppointments(updatedList);
     showToast('התור בוטל בהצלחה');
     
-    // Requirement 2: Notify others about free slot
+    // Broadcast for Requirement 2
     if (apptToCancel) {
       const [year, month, day] = apptToCancel.date.split('-').map(Number);
       const dateObj = new Date(year, month - 1, day);
@@ -147,18 +148,17 @@ function App() {
   };
 
   const handleUpdateSettings = async (newSettings: BusinessSettings) => {
-    // Check if new slots were opened by comparing working days count
     const oldDays = Object.keys(settings.calendar || {}).filter(k => settings.calendar[k].isWorking).length;
     const newDays = Object.keys(newSettings.calendar || {}).filter(k => newSettings.calendar[k].isWorking).length;
     
     await storageService.saveSettings(newSettings);
     setSettings(newSettings);
 
-    // Requirement 1: Notify when new slots are opened
+    // Broadcast for Requirement 1
     if (newDays > oldDays) {
        await storageService.broadcastNotification(
          '✂️ תורים חדשים נפתחו!',
-         'הספר פתח מועדים חדשים ביומן. היכנסו עכשיו לקבוע תור לפני שייגמר!'
+         'הספר פתח מועדים חדשים ביומן. היכנסו עכשיו לקבוע תור!'
        );
     }
   };
@@ -199,8 +199,8 @@ function App() {
                <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3">
                   <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-xs text-red-200 font-bold">ההתראות חסומות במערכת!</p>
-                    <p className="text-[10px] text-red-300/70">יש לאשר התראות בהגדרות האייפון כדי לקבל תזכורות לתור.</p>
+                    <p className="text-xs text-red-200 font-bold">ההתראות חסומות!</p>
+                    <p className="text-[10px] text-red-300/70">יש לאשר התראות בהגדרות המכשיר כדי לקבל תזכורות.</p>
                   </div>
                </div>
              )}

@@ -13,9 +13,7 @@ import {
   updateDoc,
   orderBy,
   limit,
-  onSnapshot,
-  Timestamp,
-  serverTimestamp
+  onSnapshot
 } from 'firebase/firestore';
 import { Appointment, BusinessSettings, DEFAULT_SETTINGS, User, UserRole, BroadcastNotification } from '../types';
 
@@ -25,17 +23,13 @@ const USERS_COLLECTION = 'users';
 const NOTIFICATIONS_COLLECTION = 'broadcast_notifications';
 const SETTINGS_DOC_ID = 'business_settings';
 
-let currentUserCache: User | null = null;
-
 export const storageService = {
-  // Existing methods...
   getAppointments: async (): Promise<Appointment[]> => {
     try {
       const q = query(collection(db, APPOINTMENTS_COLLECTION), orderBy('createdAt', 'desc'));
       const querySnapshot = await getDocs(q);
       return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Appointment));
     } catch (e) {
-      console.error("Error fetching appointments:", e);
       return [];
     }
   },
@@ -58,7 +52,6 @@ export const storageService = {
     }
   },
 
-  // Real-time Notification Broadcasting
   async broadcastNotification(title: string, body: string, type: 'slot_opened' | 'general' = 'slot_opened') {
     try {
       await addDoc(collection(db, NOTIFICATIONS_COLLECTION), {
@@ -72,20 +65,23 @@ export const storageService = {
     }
   },
 
-  // Listen to new notifications in real-time
   onNotificationReceived(callback: (notif: BroadcastNotification) => void) {
-    const oneMinuteAgo = Date.now() - 60000;
+    // Session-based listening: capture anything added after this exact moment
+    const sessionStart = Date.now();
     const q = query(
       collection(db, NOTIFICATIONS_COLLECTION),
-      where('createdAt', '>', oneMinuteAgo),
       orderBy('createdAt', 'desc'),
-      limit(1)
+      limit(5)
     );
 
     return onSnapshot(q, (snapshot) => {
       snapshot.docChanges().forEach((change) => {
+        // Only trigger for NEW documents added during this session
         if (change.type === "added") {
-          callback({ id: change.doc.id, ...change.doc.data() } as BroadcastNotification);
+          const data = change.doc.data();
+          if (data.createdAt && data.createdAt > sessionStart) {
+            callback({ id: change.doc.id, ...data } as BroadcastNotification);
+          }
         }
       });
     });
@@ -109,12 +105,12 @@ export const storageService = {
   },
 
   login: async (identifier: string, password: string, remember: boolean = false): Promise<User | null> => {
-    const q = query(collection(db, USERS_COLLECTION), where("phoneNumber", "==", identifier));
     if (identifier === 'admin' && password === 'admin123') {
        const admin = { id: 'admin', fullName: 'ניהול', role: UserRole.ADMIN, phoneNumber: 'admin', password: '' };
        if (remember) localStorage.setItem('current_user', JSON.stringify(admin));
        return admin;
     }
+    const q = query(collection(db, USERS_COLLECTION), where("phoneNumber", "==", identifier));
     const querySnapshot = await getDocs(q);
     if (querySnapshot.empty) return null;
     const userData = querySnapshot.docs[0].data() as User;
@@ -135,7 +131,6 @@ export const storageService = {
     return { success: true };
   },
 
-  // Added resetPassword to fix Auth.tsx error where it expects this method
   resetPassword: async (phoneNumber: string, recoveryPin: string, newPassword: string): Promise<{ success: boolean; message?: string }> => {
     try {
       const q = query(
@@ -151,7 +146,6 @@ export const storageService = {
       await updateDoc(doc(db, USERS_COLLECTION, userDoc.id), { password: newPassword });
       return { success: true };
     } catch (e) {
-      console.error("Error resetting password:", e);
       return { success: false, message: 'שגיאה בתהליך איפוס הסיסמא' };
     }
   },
