@@ -9,7 +9,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { Auth } from './components/Auth';
 import { Toast } from './components/Toast';
 import { InstallPWA } from './components/InstallPWA';
-import { Loader2, ShieldCheck, ShieldAlert, AlertCircle } from 'lucide-react';
+import { Loader2, ShieldCheck, ShieldAlert, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from './components/Button';
 
 function App() {
@@ -24,7 +24,7 @@ function App() {
   const [toast, setToast] = useState({ visible: false, message: '', subMessage: '' });
   const processedNotifs = useRef<Set<string>>(new Set());
 
-  // Heartbeat to keep Service Worker alive and checking
+  // Heartbeat to keep SW alive (Every 5 seconds)
   useEffect(() => {
     const sendPulse = () => {
       if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
@@ -32,12 +32,15 @@ function App() {
       }
     };
 
-    // Very aggressive pulse every 10 seconds to fight OS suspension
-    const pulseInterval = setInterval(sendPulse, 10000);
+    const pulseInterval = setInterval(sendPulse, 5000);
     
+    // Check for SW updates every time the app comes back to focus
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        sendPulse(); // Immediate check when app returns to view
+        sendPulse();
+        if ('serviceWorker' in navigator) {
+           navigator.serviceWorker.getRegistration().then(reg => reg?.update());
+        }
       }
     };
 
@@ -48,7 +51,7 @@ function App() {
     };
   }, []);
 
-  // Real-time synchronization for the UI
+  // Real-time synchronization for UI
   useEffect(() => {
     if (!user) return;
 
@@ -83,9 +86,7 @@ function App() {
       setLoading(false);
       
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-        try {
-          await notificationService.registerServiceWorker();
-        } catch (e) {}
+        await notificationService.registerServiceWorker();
       }
     };
     init();
@@ -145,6 +146,7 @@ function App() {
     if (granted) {
       setNotifPermission('granted');
       showToast('התראות הופעלו!', 'תקבל עדכון על כל תור שמתפנה');
+      window.location.reload(); // Force refresh to activate new SW engine
     }
   };
 
@@ -160,25 +162,29 @@ function App() {
       <Header user={user} onLogout={handleLogout} title={settings.shopName} />
       
       <main className="max-w-md mx-auto p-4 pt-2">
-        <div className="mb-6 glass-panel p-4 rounded-2xl border-gold-500/30 shadow-lg">
-             <div className="flex items-center gap-4">
+        <div className="mb-6 glass-panel p-4 rounded-2xl border-gold-500/30 shadow-lg relative overflow-hidden">
+             <div className="flex items-center gap-4 relative z-10">
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center border ${notifPermission === 'granted' ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-gold-500/10 text-gold-500 border-gold-500/20'}`}>
                   {notifPermission === 'granted' ? <ShieldCheck size={20} /> : <ShieldAlert size={20} />}
                 </div>
                 <div className="flex-1">
                    <h4 className="text-sm font-bold text-white">{notifPermission === 'granted' ? 'מערכת התראות פעילה' : 'התראות כבויות'}</h4>
-                   <p className="text-[11px] text-gray-400">{notifPermission === 'granted' ? 'תקבל תזכורות ועדכונים על תורים פנויים' : 'יש להפעיל כדי לקבל תזכורות'}</p>
+                   <p className="text-[11px] text-gray-400">{notifPermission === 'granted' ? 'תקבל עדכון ברגע שיתפנה תור' : 'יש להפעיל כדי לקבל עדכונים'}</p>
                 </div>
-                {notifPermission !== 'granted' && (
+                {notifPermission !== 'granted' ? (
                   <Button onClick={requestNotif} variant="primary" className="!py-1.5 !px-3 !text-xs">הפעל</Button>
+                ) : (
+                  <button onClick={() => window.location.reload()} className="p-2 text-gray-500 hover:text-white transition-colors" title="רענן סנכרון">
+                    <RefreshCw size={16} />
+                  </button>
                 )}
              </div>
              {notifPermission === 'denied' && (
-               <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3">
+               <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3 relative z-10">
                   <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-xs text-red-200 font-bold">ההתראות חסומות!</p>
-                    <p className="text-[10px] text-red-300/70">יש לאשר התראות בהגדרות המכשיר כדי לקבל תזכורות.</p>
+                    <p className="text-xs text-red-200 font-bold">ההתראות חסומות במכשיר!</p>
+                    <p className="text-[10px] text-red-300/70">כדי לקבל התראות, עליך לאשר אותן בהגדרות הדפדפן/האתר.</p>
                   </div>
                </div>
              )}
