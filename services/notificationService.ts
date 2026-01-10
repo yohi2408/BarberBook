@@ -56,7 +56,7 @@ export const notificationService = {
         type: 'module' 
       });
 
-      // Force update to make sure we have the latest version
+      // Aggressive update
       await registration.update();
       
       return registration;

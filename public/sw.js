@@ -1,7 +1,7 @@
 
-// Service Worker for BarberBook Pro - v23 (Background Persistence)
+// Service Worker for BarberBook Pro - v24 (24/7 Resilient Mode)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, query, orderBy, limit, onSnapshot, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, query, orderBy, limit, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBCcuOSS7cOqLU9XaATlpCBS5kgdKJ-_fA",
@@ -15,17 +15,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-let unsub = null;
-let lastPulse = Date.now();
-
-// Helper to check if app is in foreground
-async function isAppVisible() {
-    const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    return clientList.some(client => client.visibilityState === 'visible');
-}
-
-// Aggressive check for notifications
-async function checkForNewNotifications() {
+// Persistent check for notifications
+async function syncNotifications() {
     try {
         const q = query(
             collection(db, 'broadcast_notifications'),
@@ -40,16 +31,20 @@ async function checkForNewNotifications() {
         const data = latestDoc.data();
         const docId = latestDoc.id;
 
-        const cache = await caches.open('notif-tracker');
-        const lastNotified = await cache.match('last-id');
-        const lastId = lastNotified ? await lastNotified.text() : null;
+        // Use Cache API to store the last shown notification ID (survives SW restart)
+        const cache = await caches.open('notif-state-v1');
+        const lastNotifiedResponse = await cache.match('last-id');
+        const lastId = lastNotifiedResponse ? await lastNotifiedResponse.text() : null;
 
-        // Valid if within last 15 minutes
-        const fifteenMinsAgo = Date.now() - (15 * 60 * 1000);
+        // Valid if notification is from the last 30 minutes
+        const thirtyMinsAgo = Date.now() - (30 * 60 * 1000);
         
-        if (docId !== lastId && data.createdAt > fifteenMinsAgo) {
-            const visible = await isAppVisible();
-            if (!visible) {
+        if (docId !== lastId && data.createdAt > thirtyMinsAgo) {
+            // Check if app is NOT visible
+            const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+            const isVisible = clientList.some(client => client.visibilityState === 'visible');
+
+            if (!isVisible) {
                 await self.registration.showNotification(data.title, {
                     body: data.body,
                     icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
@@ -60,36 +55,15 @@ async function checkForNewNotifications() {
                     data: { url: '/BarberBook/' },
                     requireInteraction: true
                 });
+                // Save ID to prevent duplicates
                 await cache.put('last-id', new Response(docId));
             }
         }
     } catch (e) {
-        console.error("SW: Background check failed", e);
+        console.error("SW Sync Error:", e);
     }
 }
 
-function initBackgroundSync() {
-    if (unsub) {
-        try { unsub(); } catch(e) {}
-    }
-
-    console.log("SW: Initializing Firestore Listener...");
-    const q = query(
-        collection(db, 'broadcast_notifications'),
-        orderBy('createdAt', 'desc'),
-        limit(1)
-    );
-
-    unsub = onSnapshot(q, async (snapshot) => {
-        lastPulse = Date.now();
-        await checkForNewNotifications();
-    }, (error) => {
-        console.error("SW: Snapshot error, restarting in 10s", error);
-        setTimeout(initBackgroundSync, 10000);
-    });
-}
-
-// SW Lifecycle
 self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
@@ -98,43 +72,35 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     Promise.all([
       self.clients.claim(),
-      initBackgroundSync()
+      syncNotifications()
     ])
   );
 });
 
-// WAKE UP triggers
+// The "Wake up" triggers - this is what makes it work 24/7
 self.addEventListener('fetch', (event) => {
-    // Re-init listener if it died (checked every few requests)
-    if (!unsub || (Date.now() - lastPulse > 60000)) {
-        initBackgroundSync();
-    }
+    // Every network request wakes the SW. We use this to check for missed notifications.
+    event.waitUntil(syncNotifications());
 });
 
 self.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'PING') {
-        lastPulse = Date.now();
-        if (!unsub) initBackgroundSync();
+        event.waitUntil(syncNotifications());
     }
+});
+
+self.addEventListener('sync', (event) => {
+    event.waitUntil(syncNotifications());
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
         if (client.url.includes('/BarberBook/') && 'focus' in client) return client.focus();
       }
-      if (clients.openWindow) return clients.openWindow('/BarberBook/');
+      if (self.clients.openWindow) return self.clients.openWindow('/BarberBook/');
     })
   );
-});
-
-// Periodic sync attempts
-self.addEventListener('periodicsync', (event) => {
-    event.waitUntil(checkForNewNotifications());
-});
-
-self.addEventListener('sync', (event) => {
-    event.waitUntil(checkForNewNotifications());
 });
