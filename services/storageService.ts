@@ -94,7 +94,7 @@ export const storageService = {
 
       if (subscriptions.length > 0) {
         // Send requests
-        subscriptions.map(sub =>
+        const promises = subscriptions.map(sub =>
           fetch(WORKER_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -194,31 +194,46 @@ export const storageService = {
     }
   },
 
-  async saveFcmToken(token: string, userId: string | null) {
+  async savePushSubscription(subscription: any, userId: string | null) {
     try {
-      const tokenData = {
-        token,
+      // Serialize subscription to JSON
+      const subJson = JSON.parse(JSON.stringify(subscription));
+
+      const subData = {
+        endpoint: subJson.endpoint,
+        keys: subJson.keys,
+        expirationTime: subJson.expirationTime,
         userId: userId || 'anonymous',
         createdAt: Date.now(),
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
+        userAgent: navigator.userAgent
       };
 
-      // Check if token already exists
-      const q = query(collection(db, 'fcm_tokens'), where("token", "==", token));
-      const existingTokens = await getDocs(q);
+      // Check if subscription already exists (by endpoint)
+      const q = query(collection(db, 'push_subscriptions'), where("endpoint", "==", subData.endpoint));
+      const existingSubs = await getDocs(q);
 
-      if (existingTokens.empty) {
-        // Add new token
-        await addDoc(collection(db, 'fcm_tokens'), tokenData);
-        console.log('✅ FCM token saved to Firestore');
+      if (existingSubs.empty) {
+        await addDoc(collection(db, 'push_subscriptions'), subData);
+        console.log('✅ Push Subscription saved to Firestore');
       } else {
-        // Update existing token
-        const docRef = existingTokens.docs[0].ref;
+        const docRef = existingSubs.docs[0].ref;
         await updateDoc(docRef, { updatedAt: Date.now(), userId: userId || 'anonymous' });
-        console.log('✅ FCM token updated in Firestore');
+        console.log('✅ Push Subscription updated');
       }
     } catch (e) {
-      console.error('Error saving FCM token:', e);
+      console.log('Subscription update skipped', e);
+    }
+  },
+
+  async getAllSubscriptions() {
+    try {
+      const q = query(collection(db, 'push_subscriptions'));
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => doc.data());
+    } catch (e) {
+      console.error('Error fetching subs', e);
+      return [];
     }
   },
 
