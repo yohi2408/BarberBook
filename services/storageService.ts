@@ -58,9 +58,24 @@ export const storageService = {
   saveAppointment: async (appointment: Appointment): Promise<boolean> => {
     try {
       const { id, ...data } = appointment;
-      await addDoc(collection(db, APPOINTMENTS_COLLECTION), data);
+      // Generate a deterministic ID to prevent double booking
+      // Sanitizing time to replace ':' with '-' just to be safe in IDs (though : is usually allowed)
+      const safeTime = appointment.time.replace(':', '-');
+      const uniqueId = `appt_${appointment.date}_${safeTime}`;
+
+      const docRef = doc(db, APPOINTMENTS_COLLECTION, uniqueId);
+
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        console.warn('Double booking prevented! Slot already taken.');
+        return false;
+      }
+
+      await setDoc(docRef, data);
       return true;
     } catch (e) {
+      console.error('Error saving appointment:', e);
       return false;
     }
   },
