@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Appointment, BusinessSettings, TimeRange, DEFAULT_SETTINGS, Service, DaySchedule } from '../types';
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, addMonths, subMonths } from 'date-fns';
 import he from 'date-fns/locale/he';
-import { Trash2, Calendar, Settings, X, Archive, History, Scissors, ChevronRight, ChevronLeft, Check, Terminal, Wifi, BellRing } from 'lucide-react';
+import { Trash2, Calendar, Settings, X, Archive, History, Scissors, ChevronRight, ChevronLeft, Check, Terminal, Wifi, BellRing, Plus, Clock } from 'lucide-react';
 import { Button } from './Button';
 import { notificationService } from '../services/notificationService';
 
@@ -29,7 +29,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'appointments' | 'settings' | 'services' | 'debug'>('appointments');
   const [showHistory, setShowHistory] = useState(false);
-  const [swStatus, setSwStatus] = useState<any>('טוען...');
+  const [swStatus, setSwStatus] = useState<any>({ permission: 'טוען...', state: 'טוען...' });
   
   const [tempSettings, setTempSettings] = useState<BusinessSettings>(settings);
   const [saving, setSaving] = useState(false);
@@ -46,13 +46,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
        services: settings.services || DEFAULT_SETTINGS.services
     }));
     
-    // Check SW Status
-    const checkStatus = async () => {
-        const status = await notificationService.getStatus();
-        setSwStatus(status);
-    };
-    checkStatus();
+    refreshStatus();
   }, [settings]);
+
+  const refreshStatus = async () => {
+    const status = await notificationService.getStatus();
+    setSwStatus(status);
+  };
 
   const calendarDays = useMemo(() => {
       const monthStart = startOfMonth(currentMonth);
@@ -101,7 +101,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const testNotif = async () => {
       const success = await notificationService.sendLocalNotification('בדיקת מערכת', 'אם אתה רואה את זה, ההתראות בטלפון עובדות!');
       if (success) onShowToast('התראה נשלחה למכשיר זה');
-      else onShowToast('שגיאה בשליחת התראה', 'בדוק הרשאות בהגדרות');
+      else onShowToast('שגיאה בשליחת התראה', 'בדוק הרשאות בהגדרות הדפדפן');
+      refreshStatus();
+  };
+
+  const handleResetSW = async () => {
+      await notificationService.unregisterAll();
+      await notificationService.registerServiceWorker();
+      onShowToast('מערכת אותחלה', 'רענן את הדף כעת');
+      refreshStatus();
   };
 
   const handleDateClick = (day: Date) => setSelectedDateStr(format(day, 'yyyy-MM-dd'));
@@ -150,7 +158,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     onShowToast('שירות נוסף');
   };
 
-  // Added handleDeleteService to fix the missing function error on line 266
   const handleDeleteService = async (id: string) => {
     const updatedSettings = { 
       ...tempSettings, 
@@ -186,28 +193,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <h3 className="text-white font-bold mb-4 flex items-center gap-2">
                       <Wifi size={18} className="text-blue-400" /> מצב מערכת התראות
                   </h3>
-                  <div className="space-y-3 bg-black/40 p-4 rounded-2xl border border-white/5 font-mono text-[10px]">
+                  <div className="space-y-3 bg-black/40 p-4 rounded-2xl border border-white/5 font-mono text-[11px]">
                       <div className="flex justify-between">
                           <span className="text-gray-500">הרשאות דפדפן:</span>
-                          <span className={swStatus.permission === 'granted' ? 'text-green-400' : 'text-red-400'}>{swStatus.permission || 'נחסם'}</span>
+                          <span className={swStatus.permission === 'granted' ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
+                              {swStatus.permission === 'granted' ? 'מאושר' : (swStatus.permission === 'denied' ? 'נחסם' : 'ממתין')}
+                          </span>
                       </div>
                       <div className="flex justify-between">
-                          <span className="text-gray-500">סטטוס Service Worker:</span>
-                          <span className="text-blue-400">{swStatus.state || 'לא מותקן'}</span>
+                          <span className="text-gray-500">Service Worker:</span>
+                          <span className="text-blue-400">{swStatus.state}</span>
                       </div>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between overflow-hidden">
                           <span className="text-gray-500">Scope:</span>
-                          <span className="text-gray-300">{swStatus.scope || 'N/A'}</span>
+                          <span className="text-gray-400 text-[9px] truncate ml-2">{swStatus.scope || 'N/A'}</span>
                       </div>
                   </div>
                   <div className="grid grid-cols-1 gap-3 mt-6">
                       <Button onClick={testNotif} variant="outline" className="text-xs">
-                          <BellRing size={14} /> שלח התראת בדיקה למכשיר זה
+                          <BellRing size={14} /> שלח התראת בדיקה
+                      </Button>
+                      <Button onClick={handleResetSW} variant="ghost" className="text-xs text-red-400 bg-red-400/5">
+                          אפס רישום התראות (למקרה של תקלה)
                       </Button>
                       <Button onClick={() => window.location.reload()} variant="ghost" className="text-xs text-gray-500">
-                          רענן אפליקציה בכוח
+                          רענן אפליקציה
                       </Button>
                   </div>
+                  {swStatus.permission === 'denied' && (
+                      <p className="mt-4 text-[10px] text-red-300 bg-red-500/10 p-3 rounded-xl border border-red-500/20 leading-relaxed text-center">
+                          שים לב: ההרשאות חסומות בהגדרות הטלפון/דפדפן.<br/>יש להיכנס להגדרות האתר (לחיצה על המנעול ליד הכתובת) ולאפשר התראות.
+                      </p>
+                  )}
               </div>
           </div>
       )}
@@ -220,7 +237,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                  {showHistory ? 'תורים פעילים' : 'היסטוריה'}
               </button>
            </div>
-           {/* Rest of appointment list UI... */}
+           
            {Object.keys(groupedAppointments).length === 0 ? (
             <div className="text-center py-20 text-gray-500 glass-panel rounded-3xl border-dashed border-white/5">
               <p>{showHistory ? 'אין היסטוריה' : 'אין תורים עתידיים'}</p>
@@ -287,6 +304,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <label className="text-white font-bold block mb-2 text-sm">זמן בין תור לתור (דקות)</label>
               <input type="number" value={tempSettings.slotDurationMinutes || 30} onChange={(e) => setTempSettings({...tempSettings, slotDurationMinutes: Number(e.target.value)})} className="glass-input p-3 rounded-xl w-full text-sm" />
           </div>
+
           <div>
             <div className="flex justify-between items-center mb-4 px-2">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2"><Calendar size={16} className="text-gold-500" /> לוח ימי עבודה</h3>
@@ -296,6 +314,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <button type="button" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="p-1 glass rounded-full"><ChevronLeft size={14}/></button>
                 </div>
             </div>
+
             <div className="glass-panel p-4 rounded-3xl mb-4">
                 <div className="grid grid-cols-7 gap-1">
                     {calendarDays.map((day) => {
@@ -303,27 +322,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         const isWorking = tempSettings.calendar[dateKey]?.isWorking;
                         const isSelected = dateKey === selectedDateStr;
                         return (
-                            <button key={dateKey} type="button" onClick={() => handleDateClick(day)} className={`h-10 rounded-lg flex items-center justify-center text-xs font-bold transition-all ${!isSameMonth(day, currentMonth) ? 'opacity-20' : ''} ${isSelected ? 'ring-2 ring-gold-500 shadow-[0_0_15px_rgba(212,175,55,0.3)]' : ''} ${isWorking ? 'bg-gold-500/20 text-gold-500 border border-gold-500/30' : 'bg-white/5 text-gray-400'}`}>{format(day, 'd')}</button>
+                            <button key={dateKey} type="button" onClick={() => handleDateClick(day)} className={`h-10 rounded-lg flex items-center justify-center text-xs font-bold transition-all ${!isSameMonth(day, currentMonth) ? 'opacity-20' : ''} ${isSelected ? 'ring-2 ring-gold-500 shadow-[0_0_15px_rgba(212,175,55,0.3)]' : ''} ${isWorking ? 'bg-gold-500 text-black border border-gold-500/30' : 'bg-white/5 text-gray-400'}`}>{format(day, 'd')}</button>
                         );
                     })}
                 </div>
             </div>
-            {selectedDayConfig.isWorking && (
-                <div className="glass-panel p-5 rounded-3xl border-t-2 border-gold-500">
-                    <div className="space-y-3">
+
+            <div className="glass-panel p-5 rounded-3xl border-t-2 border-gold-500 space-y-5 animate-in slide-in-from-bottom-2">
+                <div className="flex justify-between items-center">
+                    <div>
+                        <h4 className="text-white font-bold">{format(parseLocalDate(selectedDateStr), 'EEEE d.M', {locale: he})}</h4>
+                        <p className="text-[10px] text-gray-500">הגדר זמינות לקבלת לקוחות</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" checked={selectedDayConfig.isWorking} onChange={(e) => updateDayIsWorking(selectedDateStr, e.target.checked)} className="sr-only peer" />
+                        <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gold-500 peer-checked:after:bg-black"></div>
+                    </label>
+                </div>
+
+                {selectedDayConfig.isWorking && (
+                    <div className="space-y-3 pt-2">
                         {selectedDayConfig.timeRanges.map((range, idx) => (
-                            <div key={idx} className="flex items-center gap-2">
-                                <div className="flex-1 glass-input rounded-lg flex items-center">
-                                    <input type="time" value={range.start} onChange={(e) => updateTimeRange(selectedDateStr, idx, 'start', e.target.value)} className="bg-transparent text-white text-center w-full p-2 outline-none text-xs" />
+                            <div key={idx} className="flex items-center gap-3 animate-in fade-in">
+                                <div className="flex-1 glass-input rounded-xl flex items-center px-2 py-1">
+                                    <Clock size={12} className="text-gray-500 ml-1" />
+                                    <input type="time" value={range.start} onChange={(e) => updateTimeRange(selectedDateStr, idx, 'start', e.target.value)} className="bg-transparent text-white text-center w-full p-2 outline-none text-xs font-mono" />
                                     <span className="text-gray-600">-</span>
-                                    <input type="time" value={range.end} onChange={(e) => updateTimeRange(selectedDateStr, idx, 'end', e.target.value)} className="bg-transparent text-white text-center w-full p-2 outline-none text-xs" />
+                                    <input type="time" value={range.end} onChange={(e) => updateTimeRange(selectedDateStr, idx, 'end', e.target.value)} className="bg-transparent text-white text-center w-full p-2 outline-none text-xs font-mono" />
                                 </div>
+                                <button type="button" onClick={() => removeTimeRange(selectedDateStr, idx)} className="text-red-400/50 hover:text-red-400 p-2"><X size={16}/></button>
                             </div>
                         ))}
+                        <button type="button" onClick={() => addTimeRange(selectedDateStr)} className="w-full py-2 border border-dashed border-white/10 rounded-xl text-gray-500 text-[10px] font-bold hover:text-gold-500 hover:border-gold-500/30 transition-all flex items-center justify-center gap-1">
+                            <Plus size={12} /> הוסף טווח שעות
+                        </button>
                     </div>
-                </div>
-            )}
+                )}
+            </div>
           </div>
+
           <Button type="button" onClick={handleSaveSettings} fullWidth isLoading={saving} className="shadow-lg py-4 text-lg">
             שמור ושלח עדכון ללקוחות
           </Button>

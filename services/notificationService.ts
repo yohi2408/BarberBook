@@ -1,17 +1,32 @@
 
 export const notificationService = {
+  getSWPath() {
+    // Dynamically resolve SW path for local vs production
+    const base = window.location.pathname.includes('/BarberBook/') ? '/BarberBook/' : '/';
+    return `${base}sw.js`;
+  },
+
   async getStatus() {
-    if (!('serviceWorker' in navigator)) return 'No SW Support';
-    if (!('Notification' in window)) return 'No Notification Support';
+    if (!('serviceWorker' in navigator)) return { permission: 'No SW Support', state: 'No SW Support' };
+    if (!('Notification' in window)) return { permission: 'No Notif Support', state: 'No Notif Support' };
     
-    const registration = await navigator.serviceWorker.getRegistration('/BarberBook/');
-    if (!registration) return 'Not Registered';
+    const base = window.location.pathname.includes('/BarberBook/') ? '/BarberBook/' : '/';
+    const registration = await navigator.serviceWorker.getRegistration(base);
     
     return {
       permission: Notification.permission,
-      state: registration.active ? 'Active' : (registration.installing ? 'Installing' : 'Inactive'),
-      scope: registration.scope
+      state: registration ? (registration.active ? 'פעיל' : (registration.installing ? 'בהתקנה' : 'לא פעיל')) : 'לא מותקן',
+      scope: registration?.scope || 'N/A'
     };
+  },
+
+  async unregisterAll() {
+      if ('serviceWorker' in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          for (let registration of registrations) {
+              await registration.unregister();
+          }
+      }
   },
 
   async requestPermission() {
@@ -27,18 +42,18 @@ export const notificationService = {
   async registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return null;
     try {
-      // Use explicit path and scope for GitHub Pages
-      const registration = await navigator.serviceWorker.register('/BarberBook/sw.js', {
-        scope: '/BarberBook/'
-      });
+      const swPath = this.getSWPath();
+      const scope = window.location.pathname.includes('/BarberBook/') ? '/BarberBook/' : '/';
       
-      // Force update if an update is available
+      console.log(`Registering SW at ${swPath} with scope ${scope}`);
+      const registration = await navigator.serviceWorker.register(swPath, { scope });
+      
       registration.onupdatefound = () => {
         const installingWorker = registration.installing;
         if (installingWorker) {
           installingWorker.onstatechange = () => {
             if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              console.log('New SW content available; please refresh.');
+              console.log('New content available');
             }
           };
         }
@@ -53,13 +68,13 @@ export const notificationService = {
 
   async sendLocalNotification(title: string, body: string) {
     if (Notification.permission !== 'granted') return false;
-    const tag = 'barber-' + Date.now();
     try {
-      const registration = await navigator.serviceWorker.getRegistration('/BarberBook/');
+      const base = window.location.pathname.includes('/BarberBook/') ? '/BarberBook/' : '/';
+      const registration = await navigator.serviceWorker.getRegistration(base);
       if (registration && registration.active) {
         registration.showNotification(title, {
           body,
-          tag,
+          tag: 'barber-' + Date.now(),
           icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
           badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
           vibrate: [200, 100, 200],
