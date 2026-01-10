@@ -87,9 +87,6 @@ function App() {
 
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
         await notificationService.registerServiceWorker();
-        // Request FCM token to enable push notifications via FCM
-        const { messagingService } = await import('./services/messagingService');
-        await messagingService.requestAndSaveToken(currentUser?.id);
       }
     };
     init();
