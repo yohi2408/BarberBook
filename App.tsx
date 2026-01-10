@@ -206,7 +206,7 @@ function App() {
                   <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
                   <div>
                     <p className="text-xs text-red-200 font-bold">ההתראות חסומות במערכת!</p>
-                    <p className="text-[10px] text-red-300/70">כנס להגדרות האייפון > עדכונים > חפש את האפליקציה ואשר "אפשר עדכונים".</p>
+                    <p className="text-[10px] text-red-300/70">כנס להגדרות האייפון &gt; עדכונים &gt; חפש את האפליקציה ואשר "אפשר עדכונים".</p>
                   </div>
                </div>
              )}
