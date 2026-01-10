@@ -1,7 +1,7 @@
 
-// Service Worker for BarberBook Pro - v32 (Free tier - no Cloud Functions needed!)
+// Service Worker for BarberBook Pro - v33 (Real-time + Free!)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, query, orderBy, limit, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBCcuOSS7cOqLU9XaATlpCBS5kgdKJ-_fA",
@@ -15,61 +15,19 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+let unsubscribe = null;
 let lastCheckedTimestamp = Date.now();
 const processedNotifications = new Set();
-
-// Check for new notifications (polling approach)
-async function checkForNewNotifications() {
-  try {
-    console.log('🔍 Checking for new notifications...');
-
-    const q = query(
-      collection(db, 'broadcast_notifications'),
-      orderBy('createdAt', 'desc'),
-      limit(5)
-    );
-
-    const snapshot = await getDocs(q);
-
-    snapshot.forEach((doc) => {
-      const data = doc.data();
-      const notifId = doc.id;
-
-      // Only show notifications that are:
-      // 1. Created after we last checked
-      // 2. Not already processed
-      // 3. Less than 10 minutes old
-      const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
-
-      if (data.createdAt > lastCheckedTimestamp &&
-        !processedNotifications.has(notifId) &&
-        data.createdAt > tenMinutesAgo) {
-
-        console.log('📨 New notification found:', data.title);
-        showNotification(notifId, data);
-      }
-    });
-
-    lastCheckedTimestamp = Date.now();
-  } catch (error) {
-    console.error('❌ Error checking notifications:', error);
-  }
-}
 
 async function showNotification(docId, data) {
   if (processedNotifications.has(docId)) {
     return;
   }
 
-  // Check cache to prevent duplicates
-  const cache = await caches.open('notif-v32');
+  const cache = await caches.open('notif-v33');
   const alreadySent = await cache.match(docId);
   if (alreadySent) return;
 
-  const clients = await self.clients.matchAll({ type: 'window' });
-  const isForeground = clients.some(client => client.visibilityState === 'visible');
-
-  // Show notification (even if app is open, for better visibility)
   await self.registration.showNotification(data.title, {
     body: data.body,
     icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
@@ -88,78 +46,98 @@ async function showNotification(docId, data) {
   console.log('✅ Notification shown:', data.title);
 }
 
-// Periodic check every 2 minutes
-let pollingInterval = null;
-
-function startPolling() {
-  if (pollingInterval) {
-    clearInterval(pollingInterval);
+// Real-time listener with auto-restart
+function initListener() {
+  if (unsubscribe) {
+    try { unsubscribe(); } catch (e) { }
   }
 
-  // Check immediately
-  checkForNewNotifications();
+  console.log('🔔 Initializing real-time listener...');
 
-  // Then check every 2 minutes
-  pollingInterval = setInterval(() => {
-    checkForNewNotifications();
-  }, 2 * 60 * 1000); // 2 minutes
+  const q = query(
+    collection(db, 'broadcast_notifications'),
+    orderBy('createdAt', 'desc'),
+    limit(3)
+  );
 
-  console.log('⏰ Polling started - checking every 2 minutes');
+  unsubscribe = onSnapshot(q, (snapshot) => {
+    console.log('📨 Snapshot received');
+
+    snapshot.docChanges().forEach((change) => {
+      if (change.type === "added") {
+        const doc = change.doc;
+        const data = doc.data();
+        const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
+
+        // Only show if it's recent and new
+        if (data.createdAt > tenMinutesAgo && data.createdAt > lastCheckedTimestamp) {
+          console.log('New notification:', data.title);
+          showNotification(doc.id, data);
+        }
+      }
+    });
+
+    lastCheckedTimestamp = Date.now();
+  }, (err) => {
+    console.error("❌ Listener error, retrying in 5s...", err);
+    setTimeout(initListener, 5000);
+  });
 }
 
-function stopPolling() {
-  if (pollingInterval) {
-    clearInterval(pollingInterval);
-    pollingInterval = null;
-    console.log('⏸️ Polling stopped');
+// Heartbeat to keep listener alive
+let heartbeatInterval = null;
+
+function startHeartbeat() {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
   }
+
+  // Restart listener every 3 minutes to prevent disconnection
+  heartbeatInterval = setInterval(() => {
+    console.log('💓 Heartbeat - restarting listener');
+    initListener();
+  }, 3 * 60 * 1000);
+
+  console.log('💓 Heartbeat started');
 }
 
 self.addEventListener('install', (event) => {
-  console.log('⚙️ SW Installing (Polling version)...');
+  console.log('⚙️ SW Installing...');
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('✅ SW Activated (Polling version)');
+  console.log('✅ SW Activated');
   event.waitUntil(
     Promise.all([
       self.clients.claim(),
       caches.keys().then(keys => {
         return Promise.all(
-          keys.filter(key => key.startsWith('notif-') && key !== 'notif-v32')
+          keys.filter(key => key.startsWith('notif-') && key !== 'notif-v33')
             .map(key => caches.delete(key))
         );
       })
     ]).then(() => {
-      startPolling();
+      initListener();
+      startHeartbeat();
     })
   );
 });
 
-// Keep polling active on fetch events
 self.addEventListener('fetch', (event) => {
-  if (!pollingInterval) {
-    console.log('🔄 Restarting polling on fetch');
-    startPolling();
+  if (!unsubscribe) {
+    console.log('🔄 Restarting listener on fetch');
+    initListener();
   }
 });
 
-// Respond to PING messages from the app
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'PING') {
-    if (!pollingInterval) {
-      console.log('🔄 Restarting polling on PING');
-      startPolling();
+    if (!unsubscribe) {
+      console.log('🔄 Restarting listener on PING');
+      initListener();
     }
-    // Also do an immediate check
-    checkForNewNotifications();
-    event.ports[0]?.postMessage({ status: 'alive', polling: !!pollingInterval });
-  }
-
-  if (event.data?.type === 'CHECK_NOW') {
-    console.log('🔔 Manual check requested');
-    checkForNewNotifications();
+    event.ports[0]?.postMessage({ status: 'alive', listening: !!unsubscribe });
   }
 });
 
@@ -176,4 +154,4 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-console.log('🚀 Service Worker ready with polling mechanism (no Cloud Functions needed!)');
+console.log('🚀 Service Worker ready with real-time notifications!');
