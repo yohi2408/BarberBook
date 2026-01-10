@@ -24,32 +24,7 @@ function App() {
   const [toast, setToast] = useState({ visible: false, message: '', subMessage: '' });
   const processedNotifs = useRef<Set<string>>(new Set());
 
-  // Heartbeat to keep SW alive (Every 5 seconds)
-  useEffect(() => {
-    const sendPulse = () => {
-      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage({ type: 'PING' });
-      }
-    };
-
-    const pulseInterval = setInterval(sendPulse, 5000);
-
-    // Check for SW updates every time the app comes back to focus
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        sendPulse();
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.getRegistration().then(reg => reg?.update());
-        }
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => {
-      clearInterval(pulseInterval);
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
-  }, []);
+  // Real-time synchronization for UI
 
   // Real-time synchronization for UI
   useEffect(() => {
