@@ -4,16 +4,29 @@ import { storageService } from './storageService';
 
 const messaging = getMessaging(firebaseApp);
 
+import { notificationService } from './notificationService';
+
+// ... imports
+
 export const messagingService = {
   // Request FCM token and save it to Firestore
   async requestAndSaveToken(userId?: string) {
     try {
       // VAPID key from Firebase Console
-      // TODO: Replace with your actual "Key pair" from Firebase Console -> Project Settings -> Cloud Messaging
       const vapidKey = 'BHyEngvxDkCvUtt088CM4c_I-fqXqpcxo8vvY5zAygwbAkYqsBgi6FrJ3jXiYG43la_QExyNKU5yX--4Kt_71oE';
 
+      // Get our own Service Worker registration to avoid Firebase looking for the default file
+      const scope = notificationService.getScope();
+      const registration = await navigator.serviceWorker.getRegistration(scope);
+
+      if (!registration) {
+        console.warn('⚠️ Service Worker not found. Make sure it is registered first.');
+        return null;
+      }
+
       const currentToken = await getToken(messaging as any, {
-        vapidKey: vapidKey
+        vapidKey: vapidKey,
+        serviceWorkerRegistration: registration
       });
 
       if (currentToken) {
