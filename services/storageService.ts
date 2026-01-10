@@ -13,7 +13,9 @@ import {
   updateDoc,
   orderBy,
   limit,
-  onSnapshot
+  limit,
+  onSnapshot,
+  runTransaction
 } from 'firebase/firestore';
 import { Appointment, BusinessSettings, DEFAULT_SETTINGS, User, UserRole, BroadcastNotification } from '../types';
 
@@ -59,23 +61,27 @@ export const storageService = {
     try {
       const { id, ...data } = appointment;
       // Generate a deterministic ID to prevent double booking
-      // Sanitizing time to replace ':' with '-' just to be safe in IDs (though : is usually allowed)
       const safeTime = appointment.time.replace(':', '-');
       const uniqueId = `appt_${appointment.date}_${safeTime}`;
 
       const docRef = doc(db, APPOINTMENTS_COLLECTION, uniqueId);
 
-      const docSnap = await getDoc(docRef);
+      // Use Transaction to guarantee atomicity (Check-And-Write)
+      await runTransaction(db, async (transaction) => {
+        const sfDoc = await transaction.get(docRef);
+        if (sfDoc.exists()) {
+          throw new Error("DoubleBooking");
+        }
+        transaction.set(docRef, data);
+      });
 
-      if (docSnap.exists()) {
-        console.warn('Double booking prevented! Slot already taken.');
-        return false;
-      }
-
-      await setDoc(docRef, data);
       return true;
-    } catch (e) {
-      console.error('Error saving appointment:', e);
+    } catch (e: any) {
+      if (e.message === "DoubleBooking") {
+        console.warn('Double booking prevented by transaction!');
+      } else {
+        console.error('Error saving appointment:', e);
+      }
       return false;
     }
   },
