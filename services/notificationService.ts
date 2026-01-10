@@ -114,5 +114,49 @@ export const notificationService = {
     } catch (error) {
       console.error("❌ Error sending push:", error);
     }
+  },
+
+  // Missing methods restored below to fix AdminDashboard errors
+  async getStatus() {
+    let permission = 'default';
+    let state = 'לא פעיל';
+    let isStandalone = false;
+
+    if ('Notification' in window) permission = Notification.permission;
+
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg?.active) state = 'פעיל';
+      else if (reg?.installing) state = 'מתקין...';
+      else if (reg?.waiting) state = 'ממתין...';
+    }
+
+    if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
+      isStandalone = true;
+    }
+
+    return { permission, state, isStandalone };
+  },
+
+  async sendLocalNotification(title: string, body: string) {
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'SHOW_NOTIFICATION',
+        title,
+        body
+      });
+      return true;
+    }
+    return false;
+  },
+
+  async unregisterAll() {
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const registration of registrations) {
+        await registration.unregister();
+      }
+      console.log('🗑️ All Service Workers unregistered');
+    }
   }
 };
