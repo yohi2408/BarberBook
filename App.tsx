@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { storageService } from './services/storageService';
 import { notificationService } from './services/notificationService';
 import { Appointment, BusinessSettings, DEFAULT_SETTINGS, User, UserRole } from './types';
@@ -9,7 +9,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { Auth } from './components/Auth';
 import { Toast } from './components/Toast';
 import { InstallPWA } from './components/InstallPWA';
-import { Loader2, Smartphone, ShieldCheck, ShieldAlert, RefreshCw, Info, AlertCircle } from 'lucide-react';
+import { Loader2, Smartphone, ShieldCheck, ShieldAlert, RefreshCw, AlertCircle } from 'lucide-react';
 import { Button } from './components/Button';
 
 function App() {
@@ -24,6 +24,7 @@ function App() {
   );
   
   const [toast, setToast] = useState({ visible: false, message: '', subMessage: '' });
+  const processedNotifs = useRef<Set<string>>(new Set());
 
   const addLog = (msg: string) => {
     console.log(msg);
@@ -46,6 +47,10 @@ function App() {
   useEffect(() => {
     if (!user) return;
     const unsubscribe = storageService.onNotificationReceived((notif) => {
+      // Prevent double processing of the same notification ID
+      if (processedNotifs.current.has(notif.id)) return;
+      processedNotifs.current.add(notif.id);
+      
       addLog(`התקבל עדכון שרת: ${notif.title}`);
       notificationService.sendLocalNotification(notif.title, notif.body);
     });
@@ -68,14 +73,14 @@ function App() {
       
       if (Notification.permission === 'granted') {
         const reg = await notificationService.registerServiceWorker();
-        if (reg) addLog('Service Worker v9 רשום.');
+        if (reg) addLog('Service Worker v12 רשום ומוכן.');
       }
     };
     init();
   }, []);
 
   const forceUpdateSW = async () => {
-    addLog('מנקה זיכרון מטמון...');
+    addLog('מנקה זיכרון מטמון ומעדכן ל-v12...');
     const registrations = await navigator.serviceWorker.getRegistrations();
     for(let registration of registrations) {
       await registration.unregister();
@@ -156,19 +161,15 @@ function App() {
       return;
     }
 
-    addLog('שולח בדיקה: צא למסך הבית תוך 3 שניות!');
+    addLog('שולח בדיקה: צא למסך הבית ונעל את הטלפון עכשיו!');
     
-    // 1. Immediate
-    notificationService.sendLocalNotification('בדיקה מיידית 🔔', 'האפליקציה פתוחה.');
-
-    // 2. Delayed - הדרך היחידה לראות באנר באייפון זה כשהאפליקציה ברקע
+    // Test direct logic
     setTimeout(async () => {
-        addLog('מנסה לשלוח התראת רקע...');
-        const sent = await notificationService.sendLocalNotification('💈 בדיקת רקע 💈', 'זה עובד גם כשהאפליקציה סגורה!');
-        if (sent) addLog('התראת רקע נשלחה למערכת.');
-    }, 5000);
+        const sent = await notificationService.sendLocalNotification('💈 בדיקת v12 💈', 'זה עובד פעם אחת בלבד, גם בנעילה!');
+        if (sent) addLog('התראת בדיקה נשלחה.');
+    }, 4000);
 
-    showToast('בדיקה נשלחה', 'צא למסך הבית עכשיו!');
+    showToast('בדיקה תופעל עוד 4 שנ', 'צא למסך הבית וסגור מסך.');
   };
 
   if (loading) {
@@ -205,7 +206,7 @@ function App() {
                   <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
                   <div>
                     <p className="text-xs text-red-200 font-bold">ההתראות חסומות במערכת!</p>
-                    <p className="text-[10px] text-red-300/70">כנס להגדרות האייפון &gt; עדכונים &gt; חפש את האפליקציה ואשר "אפשר עדכונים".</p>
+                    <p className="text-[10px] text-red-300/70">כנס להגדרות האייפון > עדכונים > חפש את האפליקציה ואשר "אפשר עדכונים".</p>
                   </div>
                </div>
              )}
@@ -221,7 +222,7 @@ function App() {
             <div className="flex justify-between items-center mb-4">
                 <h5 className="text-[10px] text-gray-500 font-mono uppercase tracking-widest">Logs & Status</h5>
                 <button onClick={forceUpdateSW} className="text-gray-400 hover:text-white flex items-center gap-1 text-[10px] bg-white/5 px-2 py-1 rounded border border-white/10">
-                    <RefreshCw size={10} /> רענון (v9)
+                    <RefreshCw size={10} /> רענון (v12)
                 </button>
             </div>
             <pre className="text-[9px] text-gray-400 font-mono whitespace-pre-wrap leading-tight h-44 overflow-y-auto">

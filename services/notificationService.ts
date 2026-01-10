@@ -13,7 +13,7 @@ export const notificationService = {
   async registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return null;
     try {
-      // Registrating with a relative path so it finds sw.js in the same folder as index.html
+      // Register sw.js from the root (Vite serves public files at root)
       const registration = await navigator.serviceWorker.register('./sw.js', {
         scope: './'
       });
@@ -27,29 +27,36 @@ export const notificationService = {
   async sendLocalNotification(title: string, body: string, delay: number = 0) {
     if (Notification.permission !== 'granted') return false;
 
+    const tag = 'barber-' + Date.now();
+
     try {
       const registration = await navigator.serviceWorker.ready;
       
-      const show = () => {
-        registration.showNotification(title, {
-          body: body,
-          tag: 'barber-' + Date.now(),
-          renotify: true,
-          vibrate: [200, 100, 200]
-        } as any);
-
+      const trigger = () => {
+        // We only trigger via the Service Worker to avoid double notifications
+        // If the app is in the foreground, registration.showNotification works.
+        // If we want to ensure SW logic (vibration/icon), we can use postMessage.
         if (registration.active) {
           registration.active.postMessage({
             type: 'SHOW_NOTIFICATION',
-            payload: { title, body }
+            payload: { title, body, tag }
           });
+        } else {
+          // Fix: Cast the options object to any to bypass strict type checking for the 'vibrate' property
+          // which might be missing in some TypeScript DOM library versions.
+          registration.showNotification(title, {
+            body,
+            tag,
+            icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+            vibrate: [200, 100, 200]
+          } as any);
         }
       };
 
       if (delay > 0) {
-        setTimeout(show, delay);
+        setTimeout(trigger, delay);
       } else {
-        show();
+        trigger();
       }
       return true;
     } catch (e) {
