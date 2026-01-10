@@ -83,10 +83,14 @@ export const messagingService = {
           },
           body: JSON.stringify({
             tokens: batch,
-            notification: {
+            // We put content in DATA only to prevent auto-display by browser
+            // Our Service Worker will read this data and show the notification manually
+            notification: null,
+            data: {
               title: title,
               body: body,
-              click_action: url
+              click_action: url,
+              icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png'
             }
           })
         });
