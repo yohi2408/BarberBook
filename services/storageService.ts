@@ -1,13 +1,13 @@
 
 import { db } from '../firebaseConfig';
-import { 
-  collection, 
-  getDocs, 
-  addDoc, 
-  deleteDoc, 
-  doc, 
-  query, 
-  where, 
+import {
+  collection,
+  getDocs,
+  addDoc,
+  deleteDoc,
+  doc,
+  query,
+  where,
   setDoc,
   getDoc,
   updateDoc,
@@ -125,9 +125,9 @@ export const storageService = {
 
   login: async (identifier: string, password: string, remember: boolean = false): Promise<User | null> => {
     if (identifier === 'admin' && password === 'admin123') {
-       const admin = { id: 'admin', fullName: 'ניהול', role: UserRole.ADMIN, phoneNumber: 'admin', password: '' };
-       if (remember) localStorage.setItem('current_user', JSON.stringify(admin));
-       return admin;
+      const admin = { id: 'admin', fullName: 'ניהול', role: UserRole.ADMIN, phoneNumber: 'admin', password: '' };
+      if (remember) localStorage.setItem('current_user', JSON.stringify(admin));
+      return admin;
     }
     const q = query(collection(db, USERS_COLLECTION), where("phoneNumber", "==", identifier));
     const querySnapshot = await getDocs(q);
@@ -153,8 +153,8 @@ export const storageService = {
   resetPassword: async (phoneNumber: string, recoveryPin: string, newPassword: string): Promise<{ success: boolean; message?: string }> => {
     try {
       const q = query(
-        collection(db, USERS_COLLECTION), 
-        where("phoneNumber", "==", phoneNumber), 
+        collection(db, USERS_COLLECTION),
+        where("phoneNumber", "==", phoneNumber),
         where("recoveryPin", "==", recoveryPin)
       );
       const querySnapshot = await getDocs(q);
@@ -166,6 +166,34 @@ export const storageService = {
       return { success: true };
     } catch (e) {
       return { success: false, message: 'שגיאה בתהליך איפוס הסיסמא' };
+    }
+  },
+
+  async saveFcmToken(token: string, userId: string | null) {
+    try {
+      const tokenData = {
+        token,
+        userId: userId || 'anonymous',
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+
+      // Check if token already exists
+      const q = query(collection(db, 'fcm_tokens'), where("token", "==", token));
+      const existingTokens = await getDocs(q);
+
+      if (existingTokens.empty) {
+        // Add new token
+        await addDoc(collection(db, 'fcm_tokens'), tokenData);
+        console.log('✅ FCM token saved to Firestore');
+      } else {
+        // Update existing token
+        const docRef = existingTokens.docs[0].ref;
+        await updateDoc(docRef, { updatedAt: Date.now(), userId: userId || 'anonymous' });
+        console.log('✅ FCM token updated in Firestore');
+      }
+    } catch (e) {
+      console.error('Error saving FCM token:', e);
     }
   },
 

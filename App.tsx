@@ -20,7 +20,7 @@ function App() {
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>(
     typeof Notification !== 'undefined' ? Notification.permission : 'default'
   );
-  
+
   const [toast, setToast] = useState({ visible: false, message: '', subMessage: '' });
   const processedNotifs = useRef<Set<string>>(new Set());
 
@@ -33,13 +33,13 @@ function App() {
     };
 
     const pulseInterval = setInterval(sendPulse, 5000);
-    
+
     // Check for SW updates every time the app comes back to focus
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
         sendPulse();
         if ('serviceWorker' in navigator) {
-           navigator.serviceWorker.getRegistration().then(reg => reg?.update());
+          navigator.serviceWorker.getRegistration().then(reg => reg?.update());
         }
       }
     };
@@ -84,9 +84,12 @@ function App() {
         setUser(currentUser);
       }
       setLoading(false);
-      
+
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
         await notificationService.registerServiceWorker();
+        // Request FCM token to enable push notifications via FCM
+        const { messagingService } = await import('./services/messagingService');
+        await messagingService.requestAndSaveToken(currentUser?.id);
       }
     };
     init();
@@ -114,12 +117,12 @@ function App() {
     const apptToCancel = appointments.find(a => a.id === id);
     await storageService.deleteAppointment(id);
     showToast('התור בוטל בהצלחה');
-    
+
     if (apptToCancel) {
-      const dateObj = new Date(apptToCancel.date.split('-').map(Number)[0], apptToCancel.date.split('-').map(Number)[1]-1, apptToCancel.date.split('-').map(Number)[2]);
+      const dateObj = new Date(apptToCancel.date.split('-').map(Number)[0], apptToCancel.date.split('-').map(Number)[1] - 1, apptToCancel.date.split('-').map(Number)[2]);
       const dayName = dateObj.toLocaleDateString('he-IL', { weekday: 'long' });
       const formattedDate = dateObj.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' });
-      
+
       await storageService.broadcastNotification(
         '🔥 התפנה תור חדש!',
         `התפנה תור ביום ${dayName} בתאריך ${formattedDate} בשעה ${apptToCancel.time}. רוצו לתפוס!`
@@ -130,14 +133,14 @@ function App() {
   const handleUpdateSettings = async (newSettings: BusinessSettings) => {
     const oldDaysCount = Object.keys(settings.calendar || {}).filter(k => settings.calendar[k].isWorking).length;
     const newDaysCount = Object.keys(newSettings.calendar || {}).filter(k => newSettings.calendar[k].isWorking).length;
-    
+
     await storageService.saveSettings(newSettings);
 
     if (newDaysCount > oldDaysCount) {
-       await storageService.broadcastNotification(
-         '✂️ תורים חדשים נפתחו!',
-         'הספר פתח מועדים חדשים ביומן. היכנסו עכשיו לקבוע תור!'
-       );
+      await storageService.broadcastNotification(
+        '✂️ תורים חדשים נפתחו!',
+        'הספר פתח מועדים חדשים ביומן. היכנסו עכשיו לקבוע תור!'
+      );
     }
   };
 
@@ -146,6 +149,9 @@ function App() {
     if (granted) {
       setNotifPermission('granted');
       showToast('התראות הופעלו!', 'תקבל עדכון על כל תור שמתפנה');
+      // Request FCM token for push notifications
+      const { messagingService } = await import('./services/messagingService');
+      await messagingService.requestAndSaveToken(user?.id);
       window.location.reload(); // Force refresh to activate new SW engine
     }
   };
@@ -160,34 +166,34 @@ function App() {
     <div className="min-h-screen pb-safe bg-[#050505]">
       <Toast isVisible={toast.visible} message={toast.message} subMessage={toast.subMessage} onClose={() => setToast(prev => ({ ...prev, visible: false }))} />
       <Header user={user} onLogout={handleLogout} title={settings.shopName} />
-      
+
       <main className="max-w-md mx-auto p-4 pt-2">
         <div className="mb-6 glass-panel p-4 rounded-2xl border-gold-500/30 shadow-lg relative overflow-hidden">
-             <div className="flex items-center gap-4 relative z-10">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center border ${notifPermission === 'granted' ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-gold-500/10 text-gold-500 border-gold-500/20'}`}>
-                  {notifPermission === 'granted' ? <ShieldCheck size={20} /> : <ShieldAlert size={20} />}
-                </div>
-                <div className="flex-1">
-                   <h4 className="text-sm font-bold text-white">{notifPermission === 'granted' ? 'מערכת התראות פעילה' : 'התראות כבויות'}</h4>
-                   <p className="text-[11px] text-gray-400">{notifPermission === 'granted' ? 'תקבל עדכון ברגע שיתפנה תור' : 'יש להפעיל כדי לקבל עדכונים'}</p>
-                </div>
-                {notifPermission !== 'granted' ? (
-                  <Button onClick={requestNotif} variant="primary" className="!py-1.5 !px-3 !text-xs">הפעל</Button>
-                ) : (
-                  <button onClick={() => window.location.reload()} className="p-2 text-gray-500 hover:text-white transition-colors" title="רענן סנכרון">
-                    <RefreshCw size={16} />
-                  </button>
-                )}
-             </div>
-             {notifPermission === 'denied' && (
-               <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3 relative z-10">
-                  <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-xs text-red-200 font-bold">ההתראות חסומות במכשיר!</p>
-                    <p className="text-[10px] text-red-300/70">כדי לקבל התראות, עליך לאשר אותן בהגדרות הדפדפן/האתר.</p>
-                  </div>
-               </div>
-             )}
+          <div className="flex items-center gap-4 relative z-10">
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center border ${notifPermission === 'granted' ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-gold-500/10 text-gold-500 border-gold-500/20'}`}>
+              {notifPermission === 'granted' ? <ShieldCheck size={20} /> : <ShieldAlert size={20} />}
+            </div>
+            <div className="flex-1">
+              <h4 className="text-sm font-bold text-white">{notifPermission === 'granted' ? 'מערכת התראות פעילה' : 'התראות כבויות'}</h4>
+              <p className="text-[11px] text-gray-400">{notifPermission === 'granted' ? 'תקבל עדכון ברגע שיתפנה תור' : 'יש להפעיל כדי לקבל עדכונים'}</p>
+            </div>
+            {notifPermission !== 'granted' ? (
+              <Button onClick={requestNotif} variant="primary" className="!py-1.5 !px-3 !text-xs">הפעל</Button>
+            ) : (
+              <button onClick={() => window.location.reload()} className="p-2 text-gray-500 hover:text-white transition-colors" title="רענן סנכרון">
+                <RefreshCw size={16} />
+              </button>
+            )}
+          </div>
+          {notifPermission === 'denied' && (
+            <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3 relative z-10">
+              <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs text-red-200 font-bold">ההתראות חסומות במכשיר!</p>
+                <p className="text-[10px] text-red-300/70">כדי לקבל התראות, עליך לאשר אותן בהגדרות הדפדפן/האתר.</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {user.role === UserRole.CLIENT ? (
