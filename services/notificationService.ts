@@ -13,7 +13,6 @@ export const notificationService = {
   async registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return null;
     try {
-      // Use the absolute path for GitHub Pages
       const registration = await navigator.serviceWorker.register('/BarberBook/sw.js', {
         scope: '/BarberBook/'
       });
@@ -31,14 +30,21 @@ export const notificationService = {
       const registration = await navigator.serviceWorker.ready;
       
       const show = () => {
-        // Direct call is often more reliable on iOS than postMessage
-        // Added 'as any' cast to fix: Object literal may only specify known properties, and 'renotify' does not exist in type 'NotificationOptions'.
+        // Method 1: Direct call
         registration.showNotification(title, {
           body: body,
-          tag: 'barber-notif',
-          renotify: true
-          // No icons here to avoid path errors
+          tag: 'barber-' + Date.now(),
+          renotify: true,
+          vibrate: [200, 100, 200]
         } as any);
+
+        // Method 2: Wake up Service Worker via postMessage as backup
+        if (registration.active) {
+          registration.active.postMessage({
+            type: 'SHOW_NOTIFICATION',
+            payload: { title, body }
+          });
+        }
       };
 
       if (delay > 0) {

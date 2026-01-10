@@ -1,6 +1,6 @@
 
-// Service Worker for BarberBook Pro - v8 (Deep Fix)
-const CACHE_NAME = 'barberbook-v8';
+// Service Worker for BarberBook Pro - v9
+const CACHE_NAME = 'barberbook-v9';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -10,18 +10,26 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-// We keep this for background processing, but we'll prioritize main-thread calls
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
     const { title, body } = event.data.payload;
+    
+    const options = {
+      body: body,
+      icon: '/BarberBook/favicon.png',
+      badge: '/BarberBook/favicon.png',
+      tag: 'barber-notif-' + Math.random(), // Unique tag forces a new banner
+      renotify: true,
+      silent: false,
+      vibrate: [200, 100, 200],
+      data: {
+        dateOfArrival: Date.now(),
+        primaryKey: 1
+      }
+    };
+
     event.waitUntil(
-      self.registration.showNotification(title, {
-        body: body,
-        badge: '/BarberBook/favicon.png',
-        icon: '/BarberBook/favicon.png',
-        tag: 'barber-msg',
-        renotify: true
-      })
+      self.registration.showNotification(title, options)
     );
   }
 });

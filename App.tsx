@@ -9,7 +9,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { Auth } from './components/Auth';
 import { Toast } from './components/Toast';
 import { InstallPWA } from './components/InstallPWA';
-import { Loader2, Smartphone, ShieldCheck, ShieldAlert, RefreshCw, Info } from 'lucide-react';
+import { Loader2, Smartphone, ShieldCheck, ShieldAlert, RefreshCw, Info, AlertCircle } from 'lucide-react';
 import { Button } from './components/Button';
 
 function App() {
@@ -33,11 +33,13 @@ function App() {
   useEffect(() => {
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
     setIsPWA(!!isStandalone);
-    addLog(isStandalone ? 'מצב PWA: פעיל ✅' : 'מצב: דפדפן (התראות חסומות באייפון) ⚠️');
+    addLog(isStandalone ? 'מצב PWA: פעיל ✅' : 'מצב: דפדפן (התראות מוגבלות באייפון) ⚠️');
     
     if (typeof Notification !== 'undefined') {
       setNotifPermission(Notification.permission);
-      addLog(`הרשאת התראות נוכחית: ${Notification.permission}`);
+      if (Notification.permission === 'denied') {
+          addLog('❌ שים לב: ההתראות חסומות בהגדרות המכשיר!');
+      }
     }
   }, []);
 
@@ -66,20 +68,18 @@ function App() {
       
       if (Notification.permission === 'granted') {
         const reg = await notificationService.registerServiceWorker();
-        if (reg) addLog('Service Worker v8 רשום ומוכן.');
+        if (reg) addLog('Service Worker v9 רשום.');
       }
     };
     init();
   }, []);
 
   const forceUpdateSW = async () => {
-    addLog('מנקה Service Workers ישנים...');
+    addLog('מנקה זיכרון מטמון...');
     const registrations = await navigator.serviceWorker.getRegistrations();
     for(let registration of registrations) {
       await registration.unregister();
     }
-    addLog('נרשם מחדש...');
-    await notificationService.registerServiceWorker();
     window.location.reload();
   };
 
@@ -141,41 +141,34 @@ function App() {
   };
 
   const requestNotif = async () => {
-    addLog('מבקש הרשאה...');
     const granted = await notificationService.requestPermission();
     if (granted) {
       setNotifPermission('granted');
-      addLog('הרשאה אושרה ע"י המשתמש.');
-      showToast('התראות הופעלו');
+      addLog('הרשאה אושרה.');
     } else {
-      addLog('הרשאה נדחתה ע"י המשתמש או המערכת.');
+      addLog('הרשאה נדחתה. יש לבדוק בהגדרות האייפון.');
     }
   };
 
   const testNotif = async () => {
     if (notifPermission !== 'granted') {
-      showToast('אין הרשאה', 'לחץ על כפתור הפעל');
+      showToast('אין הרשאה');
       return;
     }
 
-    addLog('שולח התראת בדיקה מיידית...');
-    const sent = await notificationService.sendLocalNotification(
-      'התראה עובדת! 💈', 
-      'אם אתה רואה את זה, הכל תקין.'
-    );
+    addLog('שולח בדיקה: צא למסך הבית תוך 3 שניות!');
     
-    if (sent) {
-        addLog('הפקודה נשלחה בהצלחה למערכת.');
-        showToast('התראה נשלחה!');
-    } else {
-        addLog('שגיאה בשליחת ההתראה.');
-    }
+    // 1. Immediate
+    notificationService.sendLocalNotification('בדיקה מיידית 🔔', 'האפליקציה פתוחה.');
 
-    // Delayed test
-    setTimeout(() => {
-        addLog('שולח התראת רקע מושהית...');
-        notificationService.sendLocalNotification('בדיקת רקע הצליחה! 🚀', 'ההתראות עובדות גם מחוץ לאפליקציה.');
+    // 2. Delayed - הדרך היחידה לראות באנר באייפון זה כשהאפליקציה ברקע
+    setTimeout(async () => {
+        addLog('מנסה לשלוח התראת רקע...');
+        const sent = await notificationService.sendLocalNotification('💈 בדיקת רקע 💈', 'זה עובד גם כשהאפליקציה סגורה!');
+        if (sent) addLog('התראת רקע נשלחה למערכת.');
     }, 5000);
+
+    showToast('בדיקה נשלחה', 'צא למסך הבית עכשיו!');
   };
 
   if (loading) {
@@ -196,8 +189,8 @@ function App() {
                   {notifPermission === 'granted' ? <ShieldCheck size={20} /> : <ShieldAlert size={20} />}
                 </div>
                 <div className="flex-1">
-                   <h4 className="text-sm font-bold text-white">{notifPermission === 'granted' ? 'מערכת התראות מוגדרת' : 'התראות כבויות'}</h4>
-                   <p className="text-[11px] text-gray-400">{notifPermission === 'granted' ? 'ממתין לעדכונים מהשרת' : 'חובה לאשר כדי לקבל עדכונים'}</p>
+                   <h4 className="text-sm font-bold text-white">{notifPermission === 'granted' ? 'מערכת התראות פעילה' : 'התראות כבויות'}</h4>
+                   <p className="text-[11px] text-gray-400">{notifPermission === 'granted' ? 'מוכן לקבלת הודעות' : 'לחץ להפעלה'}</p>
                 </div>
                 {notifPermission !== 'granted' ? (
                   <Button onClick={requestNotif} variant="primary" className="!py-1.5 !px-3 !text-xs">הפעל</Button>
@@ -207,10 +200,13 @@ function App() {
                   </Button>
                 )}
              </div>
-             {!isPWA && (
-               <div className="mt-3 p-2 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-2">
-                  <Info size={14} className="text-red-500 shrink-0" />
-                  <p className="text-[10px] text-red-200">שים לב: באייפון התראות עובדות רק לאחר "הוספה למסך הבית".</p>
+             {notifPermission === 'denied' && (
+               <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3">
+                  <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs text-red-200 font-bold">ההתראות חסומות במערכת!</p>
+                    <p className="text-[10px] text-red-300/70">כנס להגדרות האייפון > עדכונים > חפש את האפליקציה ואשר "אפשר עדכונים".</p>
+                  </div>
                </div>
              )}
         </div>
@@ -225,7 +221,7 @@ function App() {
             <div className="flex justify-between items-center mb-4">
                 <h5 className="text-[10px] text-gray-500 font-mono uppercase tracking-widest">Logs & Status</h5>
                 <button onClick={forceUpdateSW} className="text-gray-400 hover:text-white flex items-center gap-1 text-[10px] bg-white/5 px-2 py-1 rounded border border-white/10">
-                    <RefreshCw size={10} /> רענון גרסה (v8)
+                    <RefreshCw size={10} /> רענון (v9)
                 </button>
             </div>
             <pre className="text-[9px] text-gray-400 font-mono whitespace-pre-wrap leading-tight h-44 overflow-y-auto">
