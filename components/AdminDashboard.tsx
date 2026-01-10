@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Appointment, BusinessSettings, TimeRange, DEFAULT_SETTINGS, Service, DaySchedule } from '../types';
-import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, isBefore, startOfDay } from 'date-fns';
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
 import he from 'date-fns/locale/he';
-import { Trash2, Calendar, Phone, Settings, Plus, X, Archive, History, Scissors, AlertTriangle, Clock, ChevronRight, ChevronLeft, Check } from 'lucide-react';
+import { Trash2, Calendar, Phone, Settings, Plus, X, Archive, History, Scissors, Clock, ChevronRight, ChevronLeft, Check } from 'lucide-react';
 import { Button } from './Button';
 
 interface AdminDashboardProps {
@@ -13,7 +13,6 @@ interface AdminDashboardProps {
   onUpdateSettings: (settings: BusinessSettings) => void;
 }
 
-// Helper to parse "YYYY-MM-DD" to local Date object
 const parseLocalDate = (dateStr: string) => {
     const [year, month, day] = dateStr.split('-').map(Number);
     return new Date(year, month - 1, day);
@@ -31,14 +30,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [tempSettings, setTempSettings] = useState<BusinessSettings>(settings);
   const [saving, setSaving] = useState(false);
 
-  // Calendar State
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDateStr, setSelectedDateStr] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
-
-  // New Service State
   const [newService, setNewService] = useState<Partial<Service>>({ name: '', price: 0 });
 
-  // Sync settings
   useEffect(() => {
     setTempSettings(prev => ({
        ...DEFAULT_SETTINGS,
@@ -48,13 +43,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }));
   }, [settings]);
 
-  // Generate Calendar Grid
   const calendarDays = useMemo(() => {
       const monthStart = startOfMonth(currentMonth);
       const monthEnd = endOfMonth(monthStart);
-      const startDate = startOfWeek(monthStart, { weekStartsOn: 0 }); // Sunday start
+      const startDate = startOfWeek(monthStart, { weekStartsOn: 0 });
       const endDate = endOfWeek(monthEnd, { weekStartsOn: 0 });
-      
       return eachDayOfInterval({ start: startDate, end: endDate });
   }, [currentMonth]);
 
@@ -65,12 +58,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const [hours, minutes] = appt.time.split(':').map(Number);
     const apptDateTime = new Date(apptDate);
     apptDateTime.setHours(hours, minutes);
-
-    if (showHistory) {
-      return apptDateTime < now;
-    } else {
-      return apptDateTime >= now;
-    }
+    return showHistory ? apptDateTime < now : apptDateTime >= now;
   });
 
   const groupedAppointments = [...filteredAppointments]
@@ -88,17 +76,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    setTimeout(() => {
-        onUpdateSettings(tempSettings);
-        setSaving(false);
-        alert('הגדרות נשמרו בהצלחה');
-    }, 500);
+    onUpdateSettings(tempSettings);
+    setTimeout(() => setSaving(false), 500);
   };
 
-  // Schedule Management for Specific Date
   const handleDateClick = (day: Date) => {
-      const dateStr = format(day, 'yyyy-MM-dd');
-      setSelectedDateStr(dateStr);
+      setSelectedDateStr(format(day, 'yyyy-MM-dd'));
   };
 
   const getDayConfig = (dateStr: string): DaySchedule => {
@@ -107,40 +90,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const updateDayIsWorking = (dateStr: string, isWorking: boolean) => {
       const currentConfig = getDayConfig(dateStr);
-      const newConfig = { ...currentConfig, isWorking };
-      
-      // If setting to false (closed), we can essentially delete the key to save space, 
-      // but keeping it with isWorking: false is also fine. Let's keep it explicit.
       setTempSettings(prev => ({
           ...prev,
-          calendar: {
-              ...prev.calendar,
-              [dateStr]: newConfig
-          }
+          calendar: { ...prev.calendar, [dateStr]: { ...currentConfig, isWorking } }
       }));
   };
 
   const addTimeRange = (dateStr: string) => {
       const currentConfig = getDayConfig(dateStr);
-      const newConfig = {
-          ...currentConfig,
-          timeRanges: [...currentConfig.timeRanges, { start: "09:00", end: "17:00" }]
-      };
       setTempSettings(prev => ({
           ...prev,
-          calendar: { ...prev.calendar, [dateStr]: newConfig }
+          calendar: { ...prev.calendar, [dateStr]: { ...currentConfig, timeRanges: [...currentConfig.timeRanges, { start: "09:00", end: "17:00" }] } }
       }));
   };
 
   const removeTimeRange = (dateStr: string, index: number) => {
       const currentConfig = getDayConfig(dateStr);
-      const newConfig = {
-          ...currentConfig,
-          timeRanges: currentConfig.timeRanges.filter((_, i) => i !== index)
-      };
       setTempSettings(prev => ({
           ...prev,
-          calendar: { ...prev.calendar, [dateStr]: newConfig }
+          calendar: { ...prev.calendar, [dateStr]: { ...currentConfig, timeRanges: currentConfig.timeRanges.filter((_, i) => i !== index) } }
       }));
   };
 
@@ -148,34 +116,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const currentConfig = getDayConfig(dateStr);
       const newRanges = [...currentConfig.timeRanges];
       newRanges[index] = { ...newRanges[index], [field]: value };
-      const newConfig = { ...currentConfig, timeRanges: newRanges };
       setTempSettings(prev => ({
           ...prev,
-          calendar: { ...prev.calendar, [dateStr]: newConfig }
+          calendar: { ...prev.calendar, [dateStr]: { ...currentConfig, timeRanges: newRanges } }
       }));
   };
 
-  // Service Management
   const handleAddService = () => {
     if (!newService.name || !newService.price) return;
-    const service: Service = {
-        id: crypto.randomUUID(),
-        name: newService.name,
-        price: Number(newService.price)
-    };
-    
-    const updatedServices = [...(tempSettings.services || []), service];
-    const updatedSettings = { ...tempSettings, services: updatedServices };
-    
+    const service: Service = { id: crypto.randomUUID(), name: newService.name, price: Number(newService.price) };
+    const updatedSettings = { ...tempSettings, services: [...(tempSettings.services || []), service] };
     setTempSettings(updatedSettings);
-    onUpdateSettings(updatedSettings); // Save immediately
+    onUpdateSettings(updatedSettings);
     setNewService({ name: '', price: 0 });
   };
 
   const handleDeleteService = (id: string) => {
-      if(!window.confirm('האם למחוק שירות זה?')) return;
-      const updatedServices = tempSettings.services.filter(s => s.id !== id);
-      const updatedSettings = { ...tempSettings, services: updatedServices };
+      if(!window.confirm('למחוק שירות?')) return;
+      const updatedSettings = { ...tempSettings, services: tempSettings.services.filter(s => s.id !== id) };
       setTempSettings(updatedSettings);
       onUpdateSettings(updatedSettings);
   };
@@ -185,83 +143,61 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   return (
     <div className="animate-in fade-in duration-500">
-      {/* Tabs */}
-      <div className="glass p-1.5 rounded-2xl mb-8 flex flex-wrap gap-2">
+      <div className="glass p-1.5 rounded-2xl mb-8 flex gap-2">
         <button onClick={() => setActiveTab('appointments')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'appointments' ? 'bg-white/10 text-white shadow-lg border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-          <Calendar className="inline-block mr-2" size={16} /> תורים
+          <Calendar className="inline-block ml-2" size={16} /> תורים
         </button>
         <button onClick={() => setActiveTab('services')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'services' ? 'bg-white/10 text-white shadow-lg border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-          <Scissors className="inline-block mr-2" size={16} /> שירותים
+          <Scissors className="inline-block ml-2" size={16} /> שירותים
         </button>
         <button onClick={() => setActiveTab('settings')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'settings' ? 'bg-white/10 text-white shadow-lg border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-          <Settings className="inline-block mr-2" size={16} /> ניהול יומן
+          <Settings className="inline-block ml-2" size={16} /> יומן
         </button>
       </div>
 
       {activeTab === 'appointments' && (
         <div className="space-y-6">
            <div className="flex justify-end">
-              <button 
-                onClick={() => setShowHistory(!showHistory)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
-                   showHistory 
-                   ? 'bg-gold-500 text-black border-gold-500 shadow-lg' 
-                   : 'glass text-gray-400 hover:text-white hover:bg-white/5'
-                }`}
-              >
+              <button onClick={() => setShowHistory(!showHistory)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border ${showHistory ? 'bg-gold-500 text-black border-gold-500' : 'glass text-gray-400 hover:text-white'}`}>
                  {showHistory ? <History size={14} /> : <Archive size={14} />}
-                 {showHistory ? 'חזרה לתורים פעילים' : 'היסטוריית תורים'}
+                 {showHistory ? 'תורים פעילים' : 'היסטוריה'}
               </button>
            </div>
 
           {Object.keys(groupedAppointments).length === 0 ? (
             <div className="text-center py-20 text-gray-500 glass-panel rounded-3xl border-dashed border-white/5">
-              <Calendar size={48} className="mx-auto mb-4 opacity-20" />
-              <p className="text-lg font-medium">{showHistory ? 'אין היסטוריית תורים' : 'אין תורים עתידיים'}</p>
+              <p>{showHistory ? 'אין היסטוריה' : 'אין תורים עתידיים'}</p>
             </div>
           ) : (
-            Object.entries(groupedAppointments).map(([date, dayAppts]: [string, Appointment[]]) => {
-              const dateObj = parseLocalDate(date);
-              
-              return (
-                <div key={date} className={`rounded-3xl overflow-hidden border ${showHistory ? 'glass grayscale opacity-60' : 'glass-panel'}`}>
-                  <div className="bg-white/5 px-6 py-4 border-b border-white/5 flex justify-between items-center backdrop-blur-md">
-                    <h3 className={`font-bold text-lg ${showHistory ? 'text-gray-400' : 'text-gold-500'}`}>
-                      {format(dateObj, 'EEEE d MMMM', { locale: he })}
-                    </h3>
-                    <span className="text-xs bg-black/40 px-3 py-1 rounded-full text-gray-300 border border-white/10 font-mono">
-                      {dayAppts.length}
-                    </span>
+            (Object.entries(groupedAppointments) as [string, Appointment[]][]).map(([date, dayAppts]) => (
+                <div key={date} className={`rounded-3xl overflow-hidden border mb-4 ${showHistory ? 'glass opacity-60' : 'glass-panel'}`}>
+                  <div className="bg-white/5 px-6 py-4 border-b border-white/5 flex justify-between items-center">
+                    <h3 className="font-bold text-white">{format(parseLocalDate(date), 'EEEE d MMMM', { locale: he })}</h3>
+                    <span className="text-xs text-gray-400 font-mono">{dayAppts.length}</span>
                   </div>
                   <div className="divide-y divide-white/5">
                     {dayAppts.map(appt => (
-                      <div key={appt.id} className="p-5 flex items-center justify-between hover:bg-white/5 transition-colors group">
-                        <div className="space-y-1.5">
-                          <div className="flex items-center gap-4">
-                            <span className={`text-xl font-bold font-mono ${showHistory ? 'text-gray-500' : 'text-white'}`}>{appt.time}</span>
+                      <div key={appt.id} className="p-4 flex items-center justify-between group">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-3">
+                            <span className="text-lg font-bold font-mono text-white">{appt.time}</span>
                             <span className="text-gray-200 font-bold">{appt.customerName}</span>
                           </div>
-                          <div className="flex items-center gap-4 text-xs text-gray-500 font-medium">
-                             <span className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-md border border-white/5"><Phone size={12}/> {appt.customerPhone}</span>
-                             <span className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-md border border-white/5"><Scissors size={12}/> {appt.serviceType}</span>
+                          <div className="text-[10px] text-gray-500 flex gap-3">
+                             <span>{appt.customerPhone}</span>
+                             <span>{appt.serviceType}</span>
                           </div>
                         </div>
                         {!showHistory && (
-                            <button 
-                            onClick={() => {
-                                if(window.confirm('האם אתה בטוח שברצונך לבטל את התור?')) onCancelAppointment(appt.id);
-                            }}
-                            className="w-9 h-9 flex items-center justify-center text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-full transition-all border border-transparent hover:border-red-500/20"
-                            >
-                            <Trash2 size={18} />
+                            <button onClick={() => { if(window.confirm('לבטל תור?')) onCancelAppointment(appt.id); }} className="text-gray-500 hover:text-red-500 p-2">
+                                <Trash2 size={16} />
                             </button>
                         )}
                       </div>
                     ))}
                   </div>
                 </div>
-              );
-            })
+            ))
           )}
         </div>
       )}
@@ -269,43 +205,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {activeTab === 'services' && (
           <div className="space-y-6">
               <div className="glass-panel p-6 rounded-3xl">
-                  <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Plus size={18} className="text-gold-500"/> הוסף שירות חדש</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                      <input 
-                        type="text" 
-                        placeholder="שם הטיפול (לדוגמה: תספורת גברים)"
-                        value={newService.name}
-                        onChange={e => setNewService({...newService, name: e.target.value})}
-                        className="glass-input p-3 rounded-xl w-full text-sm"
-                      />
-                      <div className="relative">
-                        <input 
-                            type="number" 
-                            placeholder="מחיר"
-                            value={newService.price || ''}
-                            onChange={e => setNewService({...newService, price: Number(e.target.value)})}
-                            className="glass-input p-3 rounded-xl w-full text-sm"
-                        />
-                        <span className="absolute left-3 top-3 text-xs text-gray-500">₪</span>
-                      </div>
+                  <h3 className="text-sm font-bold text-white mb-4">הוסף שירות</h3>
+                  <div className="grid grid-cols-1 gap-3 mb-4">
+                      <input type="text" placeholder="שם השירות" value={newService.name} onChange={e => setNewService({...newService, name: e.target.value})} className="glass-input p-3 rounded-xl w-full text-sm" />
+                      <input type="number" placeholder="מחיר" value={newService.price || ''} onChange={e => setNewService({...newService, price: Number(e.target.value)})} className="glass-input p-3 rounded-xl w-full text-sm" />
                   </div>
-                  <Button onClick={handleAddService} fullWidth disabled={!newService.name}>הוסף שירות</Button>
+                  <Button onClick={handleAddService} fullWidth disabled={!newService.name}>שמור שירות</Button>
               </div>
-
-              <div className="space-y-3">
-                  <h3 className="text-lg font-bold text-white px-2">שירותים קיימים</h3>
+              <div className="space-y-2">
                   {tempSettings.services?.map((service) => (
-                      <div key={service.id} className="glass p-4 rounded-2xl flex justify-between items-center group hover:bg-white/5 transition-all">
+                      <div key={service.id} className="glass p-4 rounded-2xl flex justify-between items-center">
                           <div>
                               <div className="text-white font-bold">{service.name}</div>
-                              <div className="text-xs text-gold-500 font-mono mt-1">{service.price}₪</div>
+                              <div className="text-xs text-gold-500">{service.price}₪</div>
                           </div>
-                          <button 
-                            onClick={() => handleDeleteService(service.id)}
-                            className="w-10 h-10 rounded-full bg-white/5 text-gray-400 hover:text-red-500 hover:bg-red-500/10 flex items-center justify-center transition-all"
-                          >
-                              <Trash2 size={18} />
-                          </button>
+                          <button onClick={() => handleDeleteService(service.id)} className="text-gray-500 hover:text-red-500"><Trash2 size={16} /></button>
                       </div>
                   ))}
               </div>
@@ -313,146 +227,66 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {activeTab === 'settings' && (
-        <form onSubmit={handleSaveSettings} className="space-y-8">
-          {/* General Settings */}
-          <div className="glass-panel p-6 rounded-3xl space-y-6">
-             <div className="flex items-center gap-4">
-                 <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-gold-500 border border-white/5">
-                     <Clock size={24} />
-                 </div>
-                 <div className="flex-1">
-                     <label className="text-white font-bold block mb-1">משך זמן לתור (דקות)</label>
-                     <p className="text-xs text-gray-400 mb-2">קובע את המרווחים ביומן (לדוגמה: כל 20 דקות)</p>
-                     <input 
-                        type="number"
-                        value={tempSettings.slotDurationMinutes || 30}
-                        onChange={(e) => setTempSettings({...tempSettings, slotDurationMinutes: Number(e.target.value)})}
-                        className="glass-input p-3 rounded-xl w-full text-sm font-mono"
-                     />
-                 </div>
-             </div>
+        <form onSubmit={handleSaveSettings} className="space-y-6 pb-20">
+          <div className="glass-panel p-6 rounded-3xl">
+              <label className="text-white font-bold block mb-2 text-sm">זמן בין תור לתור (דקות)</label>
+              <input type="number" value={tempSettings.slotDurationMinutes || 30} onChange={(e) => setTempSettings({...tempSettings, slotDurationMinutes: Number(e.target.value)})} className="glass-input p-3 rounded-xl w-full text-sm" />
           </div>
 
-          {/* Calendar Management */}
           <div>
-            <div className="flex justify-between items-center mb-4 px-2">
-                <h3 className="text-lg font-bold flex items-center gap-2 text-white">
-                    <Calendar size={20} className="text-gold-500" />
-                    ניהול ימי עבודה
-                </h3>
+            <div className="flex justify-between items-center mb-4">
+                <h3 className="text-sm font-bold text-white">לוח ימי עבודה</h3>
                 <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="p-2 glass rounded-full hover:bg-white/10"><ChevronRight size={16}/></button>
-                    <span className="font-bold text-white min-w-[100px] text-center">{format(currentMonth, 'MMMM yyyy', {locale: he})}</span>
-                    <button type="button" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="p-2 glass rounded-full hover:bg-white/10"><ChevronLeft size={16}/></button>
+                    <button type="button" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="p-1 glass rounded-full"><ChevronRight size={14}/></button>
+                    <span className="text-xs font-bold text-white">{format(currentMonth, 'MMMM yyyy', {locale: he})}</span>
+                    <button type="button" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="p-1 glass rounded-full"><ChevronLeft size={14}/></button>
                 </div>
             </div>
 
-            {/* Calendar Grid */}
-            <div className="glass-panel p-4 rounded-3xl mb-6">
-                 {/* Week Headers */}
+            <div className="glass-panel p-4 rounded-3xl mb-4">
                 <div className="grid grid-cols-7 text-center mb-2">
-                    {['א','ב','ג','ד','ה','ו','ש'].map(d => <div key={d} className="text-xs font-bold text-gray-500 py-1">{d}</div>)}
+                    {['א','ב','ג','ד','ה','ו','ש'].map(d => <div key={d} className="text-[10px] font-bold text-gray-500">{d}</div>)}
                 </div>
-                {/* Days */}
-                <div className="grid grid-cols-7 gap-1 sm:gap-2">
-                    {calendarDays.map((day, idx) => {
+                <div className="grid grid-cols-7 gap-1">
+                    {calendarDays.map((day) => {
                         const dateKey = format(day, 'yyyy-MM-dd');
-                        const dayConfig = tempSettings.calendar[dateKey];
-                        const isWorking = dayConfig?.isWorking;
+                        const isWorking = tempSettings.calendar[dateKey]?.isWorking;
                         const isSelected = dateKey === selectedDateStr;
-                        const isToday = isSameDay(day, new Date());
-                        const isCurrentMonth = isSameMonth(day, currentMonth);
-
                         return (
-                            <button
-                                key={dateKey}
-                                type="button"
-                                onClick={() => handleDateClick(day)}
-                                className={`
-                                    relative h-12 rounded-xl flex items-center justify-center text-sm font-bold transition-all
-                                    ${!isCurrentMonth ? 'opacity-20' : ''}
-                                    ${isSelected ? 'ring-2 ring-gold-500 z-10' : ''}
-                                    ${isWorking ? 'bg-gold-500/20 text-gold-500 border border-gold-500/30' : 'bg-white/5 text-gray-400 border border-transparent'}
-                                `}
-                            >
-                                {format(day, 'd')}
-                                {isWorking && <div className="absolute bottom-1 w-1 h-1 rounded-full bg-gold-500"></div>}
-                            </button>
+                            <button key={dateKey} type="button" onClick={() => handleDateClick(day)} className={`h-10 rounded-lg flex items-center justify-center text-xs font-bold transition-all ${!isSameMonth(day, currentMonth) ? 'opacity-20' : ''} ${isSelected ? 'ring-2 ring-gold-500' : ''} ${isWorking ? 'bg-gold-500/20 text-gold-500 border border-gold-500/30' : 'bg-white/5 text-gray-400'}`}>{format(day, 'd')}</button>
                         );
                     })}
                 </div>
             </div>
 
-            {/* Selected Date Editor */}
-            <div className="glass-panel p-6 rounded-3xl border-t-4 border-gold-500 transition-all">
-                 <div className="flex justify-between items-center mb-6">
-                     <div>
-                         <div className="text-xs text-gray-400">עריכת יום:</div>
-                         <div className="text-xl font-bold text-white">{format(selectedDateObj, 'EEEE d MMMM', {locale: he})}</div>
-                     </div>
-                     <div 
-                        onClick={() => updateDayIsWorking(selectedDateStr, !selectedDayConfig.isWorking)}
-                        className={`cursor-pointer px-4 py-2 rounded-full font-bold text-sm transition-all flex items-center gap-2 ${selectedDayConfig.isWorking ? 'bg-green-500/20 text-green-500 border border-green-500/30' : 'bg-red-500/10 text-red-500 border border-red-500/20'}`}
-                     >
-                         {selectedDayConfig.isWorking ? <Check size={16} /> : <X size={16} />}
-                         {selectedDayConfig.isWorking ? 'יום פתוח' : 'יום סגור'}
+            <div className="glass-panel p-5 rounded-3xl border-t-2 border-gold-500">
+                 <div className="flex justify-between items-center mb-4">
+                     <div className="text-sm font-bold text-white">{format(selectedDateObj, 'EEEE d MMMM', {locale: he})}</div>
+                     <div onClick={() => updateDayIsWorking(selectedDateStr, !selectedDayConfig.isWorking)} className={`cursor-pointer px-3 py-1.5 rounded-full font-bold text-[10px] flex items-center gap-2 ${selectedDayConfig.isWorking ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
+                         {selectedDayConfig.isWorking ? <Check size={12} /> : <X size={12} />}
+                         {selectedDayConfig.isWorking ? 'פתוח' : 'סגור'}
                      </div>
                  </div>
-
                  {selectedDayConfig.isWorking && (
-                     <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
-                         <div className="flex items-center gap-2 text-sm text-gray-400 mb-2">
-                             <Clock size={16} /> שעות פעילות:
-                         </div>
+                     <div className="space-y-3">
                          {selectedDayConfig.timeRanges.map((range, idx) => (
-                             <div key={idx} className="flex items-center gap-3">
-                                <div className="flex-1 glass-input rounded-xl p-1 flex items-center border border-white/5">
-                                    <input 
-                                    type="time"
-                                    value={range.start}
-                                    onChange={(e) => updateTimeRange(selectedDateStr, idx, 'start', e.target.value)}
-                                    className="bg-transparent text-white text-center w-full p-2 outline-none font-mono text-sm"
-                                    />
+                             <div key={idx} className="flex items-center gap-2">
+                                <div className="flex-1 glass-input rounded-lg flex items-center">
+                                    <input type="time" value={range.start} onChange={(e) => updateTimeRange(selectedDateStr, idx, 'start', e.target.value)} className="bg-transparent text-white text-center w-full p-2 outline-none text-xs" />
                                     <span className="text-gray-600">-</span>
-                                    <input 
-                                    type="time"
-                                    value={range.end}
-                                    onChange={(e) => updateTimeRange(selectedDateStr, idx, 'end', e.target.value)}
-                                    className="bg-transparent text-white text-center w-full p-2 outline-none font-mono text-sm"
-                                    />
+                                    <input type="time" value={range.end} onChange={(e) => updateTimeRange(selectedDateStr, idx, 'end', e.target.value)} className="bg-transparent text-white text-center w-full p-2 outline-none text-xs" />
                                 </div>
                                 {selectedDayConfig.timeRanges.length > 1 && (
-                                    <button 
-                                        type="button"
-                                        onClick={() => removeTimeRange(selectedDateStr, idx)}
-                                        className="w-10 h-10 rounded-xl bg-white/5 text-gray-500 hover:text-red-500 hover:bg-red-500/10 flex items-center justify-center"
-                                    >
-                                        <X size={18}/>
-                                    </button>
+                                    <button type="button" onClick={() => removeTimeRange(selectedDateStr, idx)} className="text-gray-500"><X size={14}/></button>
                                 )}
                              </div>
                          ))}
-                         <button 
-                            type="button"
-                            onClick={() => addTimeRange(selectedDateStr)}
-                            className="w-full py-3 rounded-xl border border-dashed border-white/20 text-gray-400 hover:text-white hover:border-white/40 text-sm font-bold flex items-center justify-center gap-2"
-                         >
-                             <Plus size={16} /> הוסף משמרת
-                         </button>
-                     </div>
-                 )}
-
-                 {!selectedDayConfig.isWorking && (
-                     <div className="text-center py-6 text-gray-500 text-sm">
-                         יום זה מוגדר כסגור. לחץ על הכפתור למעלה כדי לפתוח אותו לקביעת תורים.
+                         <button type="button" onClick={() => addTimeRange(selectedDateStr)} className="w-full py-2 text-xs border border-dashed border-white/20 text-gray-400 font-bold rounded-lg">+ הוסף משמרת</button>
                      </div>
                  )}
             </div>
           </div>
-
-          <Button type="submit" fullWidth disabled={saving} className="shadow-xl py-4 text-lg mt-8">
-            {saving ? 'שומר שינויים...' : 'שמור את כל השינויים'}
-          </Button>
+          <Button type="submit" fullWidth disabled={saving} className="shadow-lg py-4">שמור ושלח עדכון ללקוחות</Button>
         </form>
       )}
     </div>

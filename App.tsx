@@ -9,16 +9,15 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { Auth } from './components/Auth';
 import { Toast } from './components/Toast';
 import { InstallPWA } from './components/InstallPWA';
-import { Loader2, Smartphone, ShieldCheck, ShieldAlert, RefreshCw, AlertCircle } from 'lucide-react';
+import { Loader2, ShieldCheck, ShieldAlert, AlertCircle } from 'lucide-react';
 import { Button } from './components/Button';
+import { format, addDays } from 'date-fns';
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [settings, setSettings] = useState<BusinessSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
-  const [debugLog, setDebugLog] = useState<string>('');
-  const [isPWA, setIsPWA] = useState(false);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>(
     typeof Notification !== 'undefined' ? Notification.permission : 'default'
   );
@@ -26,32 +25,47 @@ function App() {
   const [toast, setToast] = useState({ visible: false, message: '', subMessage: '' });
   const processedNotifs = useRef<Set<string>>(new Set());
 
-  const addLog = (msg: string) => {
-    console.log(msg);
-    setDebugLog(prev => `${new Date().toLocaleTimeString()}: ${msg}\n${prev}`.slice(0, 1000));
-  };
+  // Check for "Tomorrow" reminders automatically for the logged in client
+  useEffect(() => {
+    if (!user || user.role !== UserRole.CLIENT || appointments.length === 0) return;
+
+    const checkReminders = () => {
+        const tomorrow = addDays(new Date(), 1);
+        const tomorrowStr = format(tomorrow, 'yyyy-MM-dd');
+        
+        const myTomorrowAppt = appointments.find(appt => 
+            appt.customerPhone === user.phoneNumber && 
+            appt.date === tomorrowStr &&
+            appt.status !== 'cancelled'
+        );
+
+        if (myTomorrowAppt) {
+            const reminderKey = `reminded_${myTomorrowAppt.id}`;
+            if (!localStorage.getItem(reminderKey)) {
+                notificationService.sendLocalNotification(
+                    'תזכורת לתור שלך מחר! 💈',
+                    `מחכים לך מחר בשעה ${myTomorrowAppt.time}. אל תשכח להגיע!`
+                );
+                localStorage.setItem(reminderKey, 'true');
+            }
+        }
+    };
+
+    checkReminders();
+  }, [user, appointments]);
 
   useEffect(() => {
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
-    setIsPWA(!!isStandalone);
-    addLog(isStandalone ? 'מצב PWA: פעיל ✅' : 'מצב: דפדפן (התראות מוגבלות באייפון) ⚠️');
-    
     if (typeof Notification !== 'undefined') {
       setNotifPermission(Notification.permission);
-      if (Notification.permission === 'denied') {
-          addLog('❌ שים לב: ההתראות חסומות בהגדרות המכשיר!');
-      }
     }
   }, []);
 
+  // Background listener for broadcasts (Slots opened / Cancelled)
   useEffect(() => {
     if (!user) return;
     const unsubscribe = storageService.onNotificationReceived((notif) => {
-      // Prevent double processing of the same notification ID
       if (processedNotifs.current.has(notif.id)) return;
       processedNotifs.current.add(notif.id);
-      
-      addLog(`התקבל עדכון שרת: ${notif.title}`);
       notificationService.sendLocalNotification(notif.title, notif.body);
     });
     return () => unsubscribe();
@@ -72,21 +86,11 @@ function App() {
       setLoading(false);
       
       if (Notification.permission === 'granted') {
-        const reg = await notificationService.registerServiceWorker();
-        if (reg) addLog('Service Worker v12 רשום ומוכן.');
+        await notificationService.registerServiceWorker();
       }
     };
     init();
   }, []);
-
-  const forceUpdateSW = async () => {
-    addLog('מנקה זיכרון מטמון ומעדכן ל-v12...');
-    const registrations = await navigator.serviceWorker.getRegistrations();
-    for(let registration of registrations) {
-      await registration.unregister();
-    }
-    window.location.reload();
-  };
 
   const showToast = (message: string, subMessage: string = '') => {
     setToast({ visible: true, message, subMessage });
@@ -128,48 +132,42 @@ function App() {
     setAppointments(updatedList);
     showToast('התור בוטל בהצלחה');
     
+    // Requirement 2: Notify others about free slot
     if (apptToCancel) {
-      const dateObj = new Date(apptToCancel.date);
+      const [year, month, day] = apptToCancel.date.split('-').map(Number);
+      const dateObj = new Date(year, month - 1, day);
       const dayName = dateObj.toLocaleDateString('he-IL', { weekday: 'long' });
-      const formattedDate = dateObj.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
+      const formattedDate = dateObj.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' });
       
       await storageService.broadcastNotification(
-        '🎉 תור חדש התפנה!',
-        `התפנה מקום ביום ${dayName} (${formattedDate}) בשעה ${apptToCancel.time}. רוצו לתפוס!`
+        '🔥 התפנה תור חדש!',
+        `התפנה תור ביום ${dayName} בתאריך ${formattedDate} בשעה ${apptToCancel.time}. רוצו לתפוס!`
       );
     }
   };
 
   const handleUpdateSettings = async (newSettings: BusinessSettings) => {
+    // Check if new slots were opened by comparing working days count
+    const oldDays = Object.keys(settings.calendar || {}).filter(k => settings.calendar[k].isWorking).length;
+    const newDays = Object.keys(newSettings.calendar || {}).filter(k => newSettings.calendar[k].isWorking).length;
+    
     await storageService.saveSettings(newSettings);
     setSettings(newSettings);
+
+    // Requirement 1: Notify when new slots are opened
+    if (newDays > oldDays) {
+       await storageService.broadcastNotification(
+         '✂️ תורים חדשים נפתחו!',
+         'הספר פתח מועדים חדשים ביומן. היכנסו עכשיו לקבוע תור לפני שייגמר!'
+       );
+    }
   };
 
   const requestNotif = async () => {
     const granted = await notificationService.requestPermission();
     if (granted) {
       setNotifPermission('granted');
-      addLog('הרשאה אושרה.');
-    } else {
-      addLog('הרשאה נדחתה. יש לבדוק בהגדרות האייפון.');
     }
-  };
-
-  const testNotif = async () => {
-    if (notifPermission !== 'granted') {
-      showToast('אין הרשאה');
-      return;
-    }
-
-    addLog('שולח בדיקה: צא למסך הבית ונעל את הטלפון עכשיו!');
-    
-    // Test direct logic
-    setTimeout(async () => {
-        const sent = await notificationService.sendLocalNotification('💈 בדיקת v12 💈', 'זה עובד פעם אחת בלבד, גם בנעילה!');
-        if (sent) addLog('התראת בדיקה נשלחה.');
-    }, 4000);
-
-    showToast('בדיקה תופעל עוד 4 שנ', 'צא למסך הבית וסגור מסך.');
   };
 
   if (loading) {
@@ -191,14 +189,10 @@ function App() {
                 </div>
                 <div className="flex-1">
                    <h4 className="text-sm font-bold text-white">{notifPermission === 'granted' ? 'מערכת התראות פעילה' : 'התראות כבויות'}</h4>
-                   <p className="text-[11px] text-gray-400">{notifPermission === 'granted' ? 'מוכן לקבלת הודעות' : 'לחץ להפעלה'}</p>
+                   <p className="text-[11px] text-gray-400">{notifPermission === 'granted' ? 'תקבל תזכורות ועדכונים על תורים פנויים' : 'יש להפעיל כדי לקבל תזכורות'}</p>
                 </div>
-                {notifPermission !== 'granted' ? (
+                {notifPermission !== 'granted' && (
                   <Button onClick={requestNotif} variant="primary" className="!py-1.5 !px-3 !text-xs">הפעל</Button>
-                ) : (
-                  <Button onClick={testNotif} variant="outline" className="!py-1.5 !px-3 !text-xs flex items-center gap-1">
-                    <Smartphone size={12} /> בדיקה
-                  </Button>
                 )}
              </div>
              {notifPermission === 'denied' && (
@@ -206,7 +200,7 @@ function App() {
                   <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
                   <div>
                     <p className="text-xs text-red-200 font-bold">ההתראות חסומות במערכת!</p>
-                    <p className="text-[10px] text-red-300/70">כנס להגדרות האייפון &gt; עדכונים &gt; חפש את האפליקציה ואשר "אפשר עדכונים".</p>
+                    <p className="text-[10px] text-red-300/70">יש לאשר התראות בהגדרות האייפון כדי לקבל תזכורות לתור.</p>
                   </div>
                </div>
              )}
@@ -217,18 +211,6 @@ function App() {
         ) : (
           <AdminDashboard appointments={appointments} settings={settings} onCancelAppointment={handleCancelAppointment} onUpdateSettings={handleUpdateSettings} />
         )}
-
-        <div className="mt-10 p-4 bg-black/80 rounded-xl border border-white/5">
-            <div className="flex justify-between items-center mb-4">
-                <h5 className="text-[10px] text-gray-500 font-mono uppercase tracking-widest">Logs & Status</h5>
-                <button onClick={forceUpdateSW} className="text-gray-400 hover:text-white flex items-center gap-1 text-[10px] bg-white/5 px-2 py-1 rounded border border-white/10">
-                    <RefreshCw size={10} /> רענון (v12)
-                </button>
-            </div>
-            <pre className="text-[9px] text-gray-400 font-mono whitespace-pre-wrap leading-tight h-44 overflow-y-auto">
-              {debugLog || 'ממתין...'}
-            </pre>
-        </div>
       </main>
       <InstallPWA />
     </div>
