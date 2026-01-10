@@ -1,5 +1,5 @@
 
-// Service Worker for BarberBook Pro - v18 (Persistent Listener Fix)
+// Service Worker for BarberBook Pro - v19 (Anti-Duplicate & Auto-Resume)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, collection, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
@@ -38,14 +38,15 @@ function startBackgroundListener() {
           const data = change.doc.data();
           const docId = change.doc.id;
           
+          // Only show if it's new for this session AND not the last one we showed
           if (data.createdAt && data.createdAt > sessionStart && docId !== lastNotifId) {
             lastNotifId = docId;
             const options = {
               body: data.body,
               icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
               badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-              tag: docId,
-              renotify: true,
+              tag: 'barber-notif', // Static tag prevents multiple popups from piling up
+              renotify: false, // Don't buzz twice if another notif comes while one is visible
               vibrate: [300, 100, 300],
               data: { url: '/BarberBook/' },
               requireInteraction: true
@@ -55,8 +56,8 @@ function startBackgroundListener() {
         }
       });
     }, (error) => {
-        console.error("SW: Listener Error. Reconnecting in 3s...", error);
-        setTimeout(startBackgroundListener, 3000);
+        console.error("SW: Listener Error. Reconnecting in 5s...", error);
+        setTimeout(startBackgroundListener, 5000);
     });
 }
 
@@ -86,11 +87,4 @@ self.addEventListener('notificationclick', (event) => {
       if (clients.openWindow) return clients.openWindow('/BarberBook/');
     })
   );
-});
-
-// Message handler for debug
-self.addEventListener('message', (event) => {
-    if (event.data && event.data.type === 'PING') {
-        event.source.postMessage({ type: 'PONG', timestamp: Date.now() });
-    }
 });

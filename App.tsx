@@ -39,11 +39,14 @@ function App() {
       setSettings(data);
     });
 
-    // Listen to broadcasts
+    // Listen to broadcasts - ONLY SHOW TOAST HERE TO AVOID DUPLICATES
     const unsubNotifs = storageService.onNotificationReceived((notif) => {
       if (processedNotifs.current.has(notif.id)) return;
       processedNotifs.current.add(notif.id);
-      notificationService.sendLocalNotification(notif.title, notif.body);
+      
+      // We only show a UI toast if the app is open. 
+      // The Service Worker (sw.js) handles the actual system notification independently.
+      showToast(notif.title, notif.body);
     });
 
     return () => {
@@ -53,7 +56,7 @@ function App() {
     };
   }, [user]);
 
-  // Initial load for user session
+  // Initial load for user session and SW registration
   useEffect(() => {
     const init = async () => {
       const currentUser = storageService.getCurrentUser();
@@ -62,8 +65,14 @@ function App() {
       }
       setLoading(false);
       
+      // Try to register SW if permission is already granted
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-        await notificationService.registerServiceWorker();
+        try {
+          await notificationService.registerServiceWorker();
+          console.log("App: Service Worker registered on mount");
+        } catch (e) {
+          console.error("App: SW registration failed on mount", e);
+        }
       }
     };
     init();
@@ -123,6 +132,7 @@ function App() {
     const granted = await notificationService.requestPermission();
     if (granted) {
       setNotifPermission('granted');
+      showToast('התראות הופעלו!', 'תקבל עדכון על כל תור שמתפנה');
     }
   };
 
