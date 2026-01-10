@@ -85,7 +85,7 @@ export const storageService = {
 
       // 2. Trigger Push Notifications (Direct to Cloudflare Worker)
       console.log("🚀 Triggering Push via Cloudflare...");
-      const WORKER_URL = "https://barberbook-push.ditmun01.workers.dev";
+      const WORKER_URL = "https://barberbook-push.ditnum01.workers.dev";
 
       // Get all subscriptions
       const q = query(collection(db, 'push_subscriptions'));

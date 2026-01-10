@@ -90,7 +90,7 @@ export const notificationService = {
 
       if (subscriptions.length === 0) return;
 
-      const WORKER_URL = "https://barberbook-push.ditmun01.workers.dev";
+      const WORKER_URL = "https://barberbook-push.ditnum01.workers.dev";
 
       const promises = subscriptions.map((sub: any) =>
         fetch(WORKER_URL, {
