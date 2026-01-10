@@ -1,13 +1,13 @@
 
 import { db } from '../firebaseConfig';
-import {
-  collection,
-  getDocs,
-  addDoc,
-  deleteDoc,
-  doc,
-  query,
-  where,
+import { 
+  collection, 
+  getDocs, 
+  addDoc, 
+  deleteDoc, 
+  doc, 
+  query, 
+  where, 
   setDoc,
   getDoc,
   updateDoc,
@@ -75,33 +75,12 @@ export const storageService = {
 
   async broadcastNotification(title: string, body: string, type: 'slot_opened' | 'general' = 'slot_opened') {
     try {
-      // 1. Save to Firestore (for in-app notifications)
       await addDoc(collection(db, NOTIFICATIONS_COLLECTION), {
         title,
         body,
         type,
         createdAt: Date.now()
       });
-
-      // 2. Send Push Notifications via Cloudflare Worker
-      const WORKER_URL = "https://barberbook-push.ditnum01.workers.dev";
-      const q = query(collection(db, 'push_subscriptions'));
-      const snapshot = await getDocs(q);
-      const subscriptions = snapshot.docs.map((doc: any) => doc.data());
-
-      if (subscriptions.length > 0) {
-        const promises = subscriptions.map((sub: any) =>
-          fetch(WORKER_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              subscription: sub,
-              payload: { title, body }
-            })
-          }).catch((e: any) => console.error("Push failed", e))
-        );
-        await Promise.all(promises);
-      }
     } catch (e) {
       console.error("Error broadcasting notification:", e);
     }
@@ -146,9 +125,9 @@ export const storageService = {
 
   login: async (identifier: string, password: string, remember: boolean = false): Promise<User | null> => {
     if (identifier === 'admin' && password === 'admin123') {
-      const admin = { id: 'admin', fullName: 'ניהול', role: UserRole.ADMIN, phoneNumber: 'admin', password: '' };
-      if (remember) localStorage.setItem('current_user', JSON.stringify(admin));
-      return admin;
+       const admin = { id: 'admin', fullName: 'ניהול', role: UserRole.ADMIN, phoneNumber: 'admin', password: '' };
+       if (remember) localStorage.setItem('current_user', JSON.stringify(admin));
+       return admin;
     }
     const q = query(collection(db, USERS_COLLECTION), where("phoneNumber", "==", identifier));
     const querySnapshot = await getDocs(q);
@@ -174,8 +153,8 @@ export const storageService = {
   resetPassword: async (phoneNumber: string, recoveryPin: string, newPassword: string): Promise<{ success: boolean; message?: string }> => {
     try {
       const q = query(
-        collection(db, USERS_COLLECTION),
-        where("phoneNumber", "==", phoneNumber),
+        collection(db, USERS_COLLECTION), 
+        where("phoneNumber", "==", phoneNumber), 
         where("recoveryPin", "==", recoveryPin)
       );
       const querySnapshot = await getDocs(q);
@@ -187,49 +166,6 @@ export const storageService = {
       return { success: true };
     } catch (e) {
       return { success: false, message: 'שגיאה בתהליך איפוס הסיסמא' };
-    }
-  },
-
-  async savePushSubscription(subscription: any, userId: string | null) {
-    try {
-      // Serialize subscription to JSON
-      const subJson = JSON.parse(JSON.stringify(subscription));
-
-      const subData = {
-        endpoint: subJson.endpoint,
-        keys: subJson.keys,
-        expirationTime: subJson.expirationTime,
-        userId: userId || 'anonymous',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        userAgent: navigator.userAgent
-      };
-
-      // Check if subscription already exists (by endpoint)
-      const q = query(collection(db, 'push_subscriptions'), where("endpoint", "==", subData.endpoint));
-      const existingSubs = await getDocs(q);
-
-      if (existingSubs.empty) {
-        await addDoc(collection(db, 'push_subscriptions'), subData);
-        console.log('✅ Push Subscription saved to Firestore');
-      } else {
-        const docRef = existingSubs.docs[0].ref;
-        await updateDoc(docRef, { updatedAt: Date.now(), userId: userId || 'anonymous' });
-        console.log('✅ Push Subscription updated');
-      }
-    } catch (e) {
-      console.log('Subscription update skipped', e);
-    }
-  },
-
-  async getAllSubscriptions() {
-    try {
-      const q = query(collection(db, 'push_subscriptions'));
-      const snapshot = await getDocs(q);
-      return snapshot.docs.map(doc => doc.data());
-    } catch (e) {
-      console.error('Error fetching subs', e);
-      return [];
     }
   },
 
