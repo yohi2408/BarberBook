@@ -1,7 +1,7 @@
 
-// Service Worker for BarberBook Pro - v25 (24/7 High-Reliability Mode)
+// Service Worker for BarberBook Pro - v26 (Zero-Delay 24/7 Mode)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, query, orderBy, limit, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, query, orderBy, limit, onSnapshot, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBCcuOSS7cOqLU9XaATlpCBS5kgdKJ-_fA",
@@ -15,88 +15,118 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// Keep track of the last notification ID in persistent storage
-async function checkAndNotify() {
+let liveUnsubscribe = null;
+let isProcessing = false;
+
+// Function to show notification and save state
+async function showUniqueNotification(docId, data) {
+    if (isProcessing) return;
+    isProcessing = true;
+    
     try {
-        const q = query(
-            collection(db, 'broadcast_notifications'),
-            orderBy('createdAt', 'desc'),
-            limit(1)
-        );
-        
-        const snapshot = await getDocs(q);
-        if (snapshot.empty) return;
-
-        const latestDoc = snapshot.docs[0];
-        const data = latestDoc.data();
-        const docId = latestDoc.id;
-
-        const cache = await caches.open('notif-v25');
+        const cache = await caches.open('notif-v26');
         const lastSent = await cache.match('last-id');
         const lastId = lastSent ? await lastSent.text() : null;
 
-        // Valid if within last 60 minutes
-        const oneHourAgo = Date.now() - (60 * 60 * 1000);
-        
-        if (docId !== lastId && data.createdAt > oneHourAgo) {
-            // Check visibility
+        if (docId !== lastId) {
             const clients = await self.clients.matchAll({ type: 'window' });
-            const isAppOpen = clients.some(client => client.visibilityState === 'visible');
+            const isAppVisible = clients.some(client => client.visibilityState === 'visible');
 
-            if (!isAppOpen) {
+            if (!isAppVisible) {
                 await self.registration.showNotification(data.title, {
                     body: data.body,
                     icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
                     badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
                     tag: 'barber-notif',
                     renotify: true,
-                    vibrate: [500, 110, 500, 110, 450],
+                    vibrate: [500, 150, 500, 150, 500],
                     data: { url: '/BarberBook/' },
-                    requireInteraction: true
+                    requireInteraction: true,
+                    priority: "high"
                 });
                 await cache.put('last-id', new Response(docId));
             }
         }
-    } catch (e) {
-        console.error("SW: Poll failed", e);
+    } finally {
+        isProcessing = false;
     }
 }
 
-// Aggressive Lifecycle
+// THE LIVE ENGINE: This runs even when app is closed
+function startLiveListener() {
+    if (liveUnsubscribe) liveUnsubscribe();
+
+    const q = query(
+        collection(db, 'broadcast_notifications'),
+        orderBy('createdAt', 'desc'),
+        limit(1)
+    );
+
+    // Initial check (Cold Start)
+    getDocs(q).then(snapshot => {
+        if (!snapshot.empty) {
+            const doc = snapshot.docs[0];
+            const data = doc.data();
+            const now = Date.now();
+            // Only notify if message is from the last 15 minutes
+            if (data.createdAt > now - (15 * 60 * 1000)) {
+                showUniqueNotification(doc.id, data);
+            }
+        }
+    });
+
+    // Persistent Listener
+    liveUnsubscribe = onSnapshot(q, (snapshot) => {
+        if (!snapshot.empty) {
+            const doc = snapshot.docs[0];
+            const data = doc.data();
+            const now = Date.now();
+            if (data.createdAt > now - (15 * 60 * 1000)) {
+                showUniqueNotification(doc.id, data);
+            }
+        }
+    }, (error) => {
+        console.error("SW Listener Error, restarting in 10s...", error);
+        setTimeout(startLiveListener, 10000);
+    });
+}
+
+// Lifecycle
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
+    self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+    event.waitUntil(
+        Promise.all([
+            self.clients.claim(),
+            startLiveListener()
+        ])
+    );
 });
 
-// Wake up triggers
+// WAKE UP triggers
 self.addEventListener('fetch', (event) => {
-  // Every time the phone does ANY network request, check for notifications
-  event.waitUntil(checkAndNotify());
+    // Every network request is a chance to ensure the listener is alive
+    if (!liveUnsubscribe) {
+        startLiveListener();
+    }
 });
 
 self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'PING') {
-    event.waitUntil(checkAndNotify());
-  }
+    if (event.data && event.data.type === 'PING') {
+        if (!liveUnsubscribe) startLiveListener();
+    }
 });
 
-// Background sync triggers (Android support)
-self.addEventListener('sync', (event) => {
-  event.waitUntil(checkAndNotify());
-});
-
-// Notification interaction
 self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
-        if (client.url.includes('/BarberBook/') && 'focus' in client) return client.focus();
-      }
-      if (self.clients.openWindow) return self.clients.openWindow('/BarberBook/');
-    })
-  );
+    event.notification.close();
+    event.waitUntil(
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+            for (const client of clientList) {
+                if (client.url.includes('/BarberBook/') && 'focus' in client) return client.focus();
+            }
+            if (self.clients.openWindow) return self.clients.openWindow('/BarberBook/');
+        })
+    );
 });

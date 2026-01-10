@@ -39,6 +39,7 @@ export const notificationService = {
     if (!('Notification' in window)) return false;
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
+      await this.unregisterAll(); // Clear old to ensure new logic
       await this.registerServiceWorker();
       return true;
     }
@@ -56,9 +57,14 @@ export const notificationService = {
         type: 'module' 
       });
 
-      // Aggressive update
-      await registration.update();
+      // Force instant activation
+      if (registration.installing) {
+          registration.installing.addEventListener('statechange', (e: any) => {
+              if (e.target.state === 'installed') window.location.reload();
+          });
+      }
       
+      await registration.update();
       return registration;
     } catch (error) {
       console.error('Service Worker Registration Failed:', error);
