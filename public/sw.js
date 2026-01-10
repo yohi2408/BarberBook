@@ -1,8 +1,8 @@
 
-// Service Worker for BarberBook Pro - v18 (Persistent Listener Fix)
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeApp } from "firebase/app";
+import { getMessaging, onBackgroundMessage } from "firebase/messaging/sw";
 
+// Firebase App Config
 const firebaseConfig = {
   apiKey: "AIzaSyBCcuOSS7cOqLU9XaATlpCBS5kgdKJ-_fA",
   authDomain: "barberbook-96ff8.firebaseapp.com",
@@ -13,84 +13,72 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+const messaging = getMessaging(app);
 
-const sessionStart = Date.now();
-let lastNotifId = null;
-let unsub = null;
+// Duplicate Prevention Cache
+const notificationCache = new Set();
+const MAX_CACHE_SIZE = 20;
 
-function startBackgroundListener() {
-    if (unsub) {
-        console.log("SW: Closing previous listener...");
-        unsub();
-    }
-    
-    console.log("SW: Starting Persistent Background Listener...");
-    const q = query(
-      collection(db, 'broadcast_notifications'),
-      orderBy('createdAt', 'desc'),
-      limit(1)
-    );
-
-    unsub = onSnapshot(q, (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === "added") {
-          const data = change.doc.data();
-          const docId = change.doc.id;
-          
-          if (data.createdAt && data.createdAt > sessionStart && docId !== lastNotifId) {
-            lastNotifId = docId;
-            const options = {
-              body: data.body,
-              icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-              badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-              tag: docId,
-              renotify: true,
-              vibrate: [300, 100, 300],
-              data: { url: '/BarberBook/' },
-              requireInteraction: true
-            };
-            self.registration.showNotification(data.title, options);
-          }
-        }
-      });
-    }, (error) => {
-        console.error("SW: Listener Error. Reconnecting in 3s...", error);
-        setTimeout(startBackgroundListener, 3000);
-    });
+function isDuplicate(id) {
+  if (notificationCache.has(id)) return true;
+  notificationCache.add(id);
+  if (notificationCache.size > MAX_CACHE_SIZE) {
+    const first = notificationCache.values().next().value;
+    notificationCache.delete(first);
+  }
+  return false;
 }
 
-// Start immediately on load
-startBackgroundListener();
+// Background Message Handler
+onBackgroundMessage(messaging, (payload) => {
+  console.log('[firebase-messaging-sw.js] Received background message ', payload);
 
+  const notificationTitle = payload.notification?.title || 'BarberBook';
+  const notificationOptions = {
+    body: payload.notification?.body,
+    icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+    badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png', // Android small icon
+    data: payload.data,
+    tag: payload.messageId || 'barber-notification', // Replace tag to prevent stacking/duplication if needed
+    renotify: true,
+    requireInteraction: true
+  };
+
+  if (payload.messageId && isDuplicate(payload.messageId)) {
+    console.log('Ignoring duplicate message:', payload.messageId);
+    return;
+  }
+
+  return self.registration.showNotification(notificationTitle, notificationOptions);
+});
+
+// Click Handler
+self.addEventListener('notificationclick', function (event) {
+  console.log('Notification click received.');
+  event.notification.close();
+
+  const urlToOpen = event.notification.data?.url || '/BarberBook/';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
+      for (let i = 0; i < clientList.length; i++) {
+        let client = clientList[i];
+        if (client.url.includes(urlToOpen) && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen);
+      }
+    })
+  );
+});
+
+// Install & Activate (standard PWA stuff)
 self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    Promise.all([
-      self.clients.claim(),
-      startBackgroundListener()
-    ])
-  );
-});
-
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
-        if (client.url.includes('/BarberBook/') && 'focus' in client) return client.focus();
-      }
-      if (clients.openWindow) return clients.openWindow('/BarberBook/');
-    })
-  );
-});
-
-// Message handler for debug
-self.addEventListener('message', (event) => {
-    if (event.data && event.data.type === 'PING') {
-        event.source.postMessage({ type: 'PONG', timestamp: Date.now() });
-    }
+  event.waitUntil(self.clients.claim());
 });

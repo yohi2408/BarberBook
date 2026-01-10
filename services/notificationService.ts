@@ -14,11 +14,11 @@ export const notificationService = {
   async getStatus() {
     if (!('serviceWorker' in navigator)) return { permission: 'אין תמיכה ב-SW', state: 'אין תמיכה' };
     if (!('Notification' in window)) return { permission: 'אין תמיכה בהתראות', state: 'אין תמיכה' };
-    
+
     const scope = this.getScope();
     const registration = await navigator.serviceWorker.getRegistration(scope);
     const isStandalone = (window.navigator as any).standalone || window.matchMedia('(display-mode: standalone)').matches;
-    
+
     return {
       permission: Notification.permission,
       state: registration ? (registration.active ? 'פעיל' : (registration.installing ? 'בהתקנה' : 'לא פעיל')) : 'לא מותקן',
@@ -28,13 +28,13 @@ export const notificationService = {
   },
 
   async unregisterAll() {
-      if ('serviceWorker' in navigator) {
-          const registrations = await navigator.serviceWorker.getRegistrations();
-          for (let registration of registrations) {
-              await registration.unregister();
-          }
-          console.log("All Service Workers unregistered");
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (let registration of registrations) {
+        await registration.unregister();
       }
+      console.log("All Service Workers unregistered");
+    }
   },
 
   async requestPermission() {
@@ -52,15 +52,15 @@ export const notificationService = {
     try {
       const swPath = this.getSWPath();
       const scope = this.getScope();
-      
+
       console.log(`Registering Service Worker: ${swPath} (Scope: ${scope})`);
-      
+
       // CRITICAL FOR IPHONE: Since sw.js uses 'import', we MUST specify type: 'module'
-      const registration = await navigator.serviceWorker.register(swPath, { 
+      const registration = await navigator.serviceWorker.register(swPath, {
         scope: scope,
-        type: 'module' 
+        type: 'module'
       });
-      
+
       return registration;
     } catch (error) {
       console.error('Service Worker Registration Failed:', error);

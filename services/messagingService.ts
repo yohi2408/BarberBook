@@ -8,10 +8,12 @@ export const messagingService = {
   // Request FCM token and save it to Firestore
   async requestAndSaveToken(userId?: string) {
     try {
-      // VAPID key from Firebase Console (you'll need to generate this)
-      // For now, we'll try without it - Firebase will use default
+      // VAPID key from Firebase Console
+      // TODO: Replace with your actual "Key pair" from Firebase Console -> Project Settings -> Cloud Messaging
+      const vapidKey = 'REPLACE_WITH_YOUR_PUBLIC_KEY_STARTING_WITH_B';
+
       const currentToken = await getToken(messaging as any, {
-        vapidKey: 'BKxN8vQ_YOUR_VAPID_KEY_HERE' // Replace with actual key from Firebase Console
+        vapidKey: vapidKey
       });
 
       if (currentToken) {

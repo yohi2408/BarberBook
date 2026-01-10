@@ -1,13 +1,13 @@
 
 import { db } from '../firebaseConfig';
-import { 
-  collection, 
-  getDocs, 
-  addDoc, 
-  deleteDoc, 
-  doc, 
-  query, 
-  where, 
+import {
+  collection,
+  getDocs,
+  addDoc,
+  deleteDoc,
+  doc,
+  query,
+  where,
   setDoc,
   getDoc,
   updateDoc,
@@ -86,24 +86,42 @@ export const storageService = {
     }
   },
 
-  onNotificationReceived(callback: (notif: BroadcastNotification) => void) {
-    const sessionStart = Date.now();
-    const q = query(
-      collection(db, NOTIFICATIONS_COLLECTION),
-      orderBy('createdAt', 'desc'),
-      limit(5)
-    );
+  async saveFcmToken(token: string, userId: string | null) {
+    try {
+      // Check if token exists
+      const q = query(collection(db, 'fcm_tokens'), where('token', '==', token));
+      const snap = await getDocs(q);
 
-    return onSnapshot(q, (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === "added") {
-          const data = change.doc.data();
-          if (data.createdAt && data.createdAt > sessionStart) {
-            callback({ id: change.doc.id, ...data } as BroadcastNotification);
-          }
-        }
+      const data = {
+        token,
+        userId,
+        updatedAt: Date.now(),
+        platform: 'web',
+        userAgent: navigator.userAgent
+      };
+
+      if (!snap.empty) {
+        // Update existing
+        await updateDoc(doc(db, 'fcm_tokens', snap.docs[0].id), data);
+      } else {
+        // Create new
+        await addDoc(collection(db, 'fcm_tokens'), data);
+      }
+    } catch (e) {
+      console.error('Error saving FCM token:', e);
+    }
+  },
+
+  async removeFcmToken(token: string) {
+    try {
+      const q = query(collection(db, 'fcm_tokens'), where('token', '==', token));
+      const snap = await getDocs(q);
+      snap.forEach(async (d) => {
+        await deleteDoc(d.ref);
       });
-    });
+    } catch (e) {
+      console.error('Error removing FCM token:', e);
+    }
   },
 
   getSettings: async (): Promise<BusinessSettings> => {
@@ -125,9 +143,9 @@ export const storageService = {
 
   login: async (identifier: string, password: string, remember: boolean = false): Promise<User | null> => {
     if (identifier === 'admin' && password === 'admin123') {
-       const admin = { id: 'admin', fullName: 'ניהול', role: UserRole.ADMIN, phoneNumber: 'admin', password: '' };
-       if (remember) localStorage.setItem('current_user', JSON.stringify(admin));
-       return admin;
+      const admin = { id: 'admin', fullName: 'ניהול', role: UserRole.ADMIN, phoneNumber: 'admin', password: '' };
+      if (remember) localStorage.setItem('current_user', JSON.stringify(admin));
+      return admin;
     }
     const q = query(collection(db, USERS_COLLECTION), where("phoneNumber", "==", identifier));
     const querySnapshot = await getDocs(q);
@@ -153,8 +171,8 @@ export const storageService = {
   resetPassword: async (phoneNumber: string, recoveryPin: string, newPassword: string): Promise<{ success: boolean; message?: string }> => {
     try {
       const q = query(
-        collection(db, USERS_COLLECTION), 
-        where("phoneNumber", "==", phoneNumber), 
+        collection(db, USERS_COLLECTION),
+        where("phoneNumber", "==", phoneNumber),
         where("recoveryPin", "==", recoveryPin)
       );
       const querySnapshot = await getDocs(q);
