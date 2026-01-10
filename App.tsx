@@ -24,31 +24,31 @@ function App() {
   const [toast, setToast] = useState({ visible: false, message: '', subMessage: '' });
   const processedNotifs = useRef<Set<string>>(new Set());
 
-  // Heartbeat to keep SW alive (Every 15 seconds)
+  // Heartbeat to keep Service Worker alive and checking
   useEffect(() => {
-    const sendPing = () => {
+    const sendPulse = () => {
       if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
         navigator.serviceWorker.controller.postMessage({ type: 'PING' });
       }
     };
 
-    const heartbeat = setInterval(sendPing, 15000);
+    // Very aggressive pulse every 10 seconds to fight OS suspension
+    const pulseInterval = setInterval(sendPulse, 10000);
     
-    // Also ping when visibility changes (locking/unlocking)
     const handleVisibility = () => {
-      if (document.visibilityState === 'hidden' || document.visibilityState === 'visible') {
-        sendPing();
+      if (document.visibilityState === 'visible') {
+        sendPulse(); // Immediate check when app returns to view
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
-      clearInterval(heartbeat);
+      clearInterval(pulseInterval);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, []);
 
-  // Real-time synchronization
+  // Real-time synchronization for the UI
   useEffect(() => {
     if (!user) return;
 
