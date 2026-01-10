@@ -1,5 +1,5 @@
 
-// Service Worker for BarberBook Pro - v28 (Self-Healing Mode)
+// Service Worker for BarberBook Pro - v29 (Environment-Agnostic)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, collection, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
@@ -16,11 +16,10 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 let unsubscribe = null;
-let lastNotifiedId = null;
 
 async function showNotification(docId, data) {
-  // Persistence check to avoid duplicate alerts
-  const cache = await caches.open('notif-memory-v28');
+  // Persistent memory to prevent duplicate popups
+  const cache = await caches.open('notif-v29');
   const alreadySent = await cache.match(docId);
   if (alreadySent) return;
 
@@ -32,14 +31,13 @@ async function showNotification(docId, data) {
       body: data.body,
       icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
       badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-      tag: 'barber-alert', // Unified tag to collapse multiple notifications
+      tag: 'barber-alert',
       renotify: true,
       vibrate: [500, 110, 500, 110, 450],
-      data: { url: '/BarberBook/' },
+      data: { url: self.location.origin + self.location.pathname.replace('sw.js', '') },
       requireInteraction: true
     });
     
-    // Save to cache so we never show this ID again
     await cache.put(docId, new Response('sent'));
   }
 }
@@ -59,45 +57,32 @@ function initListener() {
     if (!snapshot.empty) {
       const doc = snapshot.docs[0];
       const data = doc.data();
-      const docId = doc.id;
-      
-      // Only process if it's "fresh" (from the last 10 minutes)
       const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
       if (data.createdAt > tenMinutesAgo) {
-        showNotification(docId, data);
+        showNotification(doc.id, data);
       }
     }
   }, (err) => {
-    console.error("SW Listener error, restarting...", err);
-    setTimeout(initListener, 5000); // Restart after 5 seconds if failed
+    console.error("Firebase Listener Failed, retrying...", err);
+    setTimeout(initListener, 5000);
   });
 }
 
-// Service Worker Events
 self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    Promise.all([
-      self.clients.claim(),
-      initListener()
-    ])
-  );
+  event.waitUntil(Promise.all([self.clients.claim(), initListener()]));
 });
 
-// WAKE UP triggers
-// Any time the device does something, check if listener is alive
 self.addEventListener('fetch', (event) => {
   if (!unsubscribe) initListener();
 });
 
 self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'PING') {
+  if (event.data?.type === 'PING') {
     if (!unsubscribe) initListener();
-    // Keep alive logic
-    event.waitUntil(Promise.resolve());
   }
 });
 
@@ -105,10 +90,8 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
-        if (client.url.includes('/BarberBook/') && 'focus' in client) return client.focus();
-      }
-      if (self.clients.openWindow) return self.clients.openWindow('/BarberBook/');
+      if (clientList.length > 0) return clientList[0].focus();
+      return self.clients.openWindow(event.notification.data.url || './');
     })
   );
 });
