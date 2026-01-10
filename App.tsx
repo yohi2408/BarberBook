@@ -149,9 +149,6 @@ function App() {
     if (granted) {
       setNotifPermission('granted');
       showToast('התראות הופעלו!', 'תקבל עדכון על כל תור שמתפנה');
-      // Request FCM token for push notifications
-      const { messagingService } = await import('./services/messagingService');
-      await messagingService.requestAndSaveToken(user?.id);
       window.location.reload(); // Force refresh to activate new SW engine
     }
   };

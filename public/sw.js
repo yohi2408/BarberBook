@@ -1,96 +1,179 @@
 
-// Service Worker for BarberBook Pro - v31 (FCM-based, no sleep issues)
-importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
+// Service Worker for BarberBook Pro - v32 (Free tier - no Cloud Functions needed!)
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { getFirestore, collection, query, orderBy, limit, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
-// Initialize Firebase in the service worker
-firebase.initializeApp({
+const firebaseConfig = {
   apiKey: "AIzaSyBCcuOSS7cOqLU9XaATlpCBS5kgdKJ-_fA",
   authDomain: "barberbook-96ff8.firebaseapp.com",
   projectId: "barberbook-96ff8",
   storageBucket: "barberbook-96ff8.firebasestorage.app",
   messagingSenderId: "84211314484",
   appId: "1:84211314484:web:1b22c1c62fb7d08b06bf61"
-});
+};
 
-const messaging = firebase.messaging();
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
-console.log('🔥 Firebase Messaging SW initialized');
+let lastCheckedTimestamp = Date.now();
+const processedNotifications = new Set();
 
-// Handle background messages - THIS is what keeps notifications working even when SW sleeps
-// FCM will wake up the SW when a message arrives
-messaging.onBackgroundMessage(function (payload) {
-  console.log('📨 Background message received:', payload);
+// Check for new notifications (polling approach)
+async function checkForNewNotifications() {
+  try {
+    console.log('🔍 Checking for new notifications...');
 
-  const notificationTitle = payload.notification?.title || payload.data?.title || 'BarberBook';
-  const notificationOptions = {
-    body: payload.notification?.body || payload.data?.body || '',
+    const q = query(
+      collection(db, 'broadcast_notifications'),
+      orderBy('createdAt', 'desc'),
+      limit(5)
+    );
+
+    const snapshot = await getDocs(q);
+
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      const notifId = doc.id;
+
+      // Only show notifications that are:
+      // 1. Created after we last checked
+      // 2. Not already processed
+      // 3. Less than 10 minutes old
+      const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
+
+      if (data.createdAt > lastCheckedTimestamp &&
+        !processedNotifications.has(notifId) &&
+        data.createdAt > tenMinutesAgo) {
+
+        console.log('📨 New notification found:', data.title);
+        showNotification(notifId, data);
+      }
+    });
+
+    lastCheckedTimestamp = Date.now();
+  } catch (error) {
+    console.error('❌ Error checking notifications:', error);
+  }
+}
+
+async function showNotification(docId, data) {
+  if (processedNotifications.has(docId)) {
+    return;
+  }
+
+  // Check cache to prevent duplicates
+  const cache = await caches.open('notif-v32');
+  const alreadySent = await cache.match(docId);
+  if (alreadySent) return;
+
+  const clients = await self.clients.matchAll({ type: 'window' });
+  const isForeground = clients.some(client => client.visibilityState === 'visible');
+
+  // Show notification (even if app is open, for better visibility)
+  await self.registration.showNotification(data.title, {
+    body: data.body,
     icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
     badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-    tag: 'barber-alert-' + Date.now(),
+    tag: 'barber-alert-' + docId,
     renotify: true,
     vibrate: [500, 110, 500, 110, 450],
-    data: {
-      url: payload.data?.url || self.location.origin,
-      timestamp: Date.now()
-    },
+    data: { url: self.location.origin },
     requireInteraction: true,
     silent: false
-  };
+  });
 
-  console.log('✅ Showing notification:', notificationTitle);
-  return self.registration.showNotification(notificationTitle, notificationOptions);
-});
+  processedNotifications.add(docId);
+  await cache.put(docId, new Response('sent'));
+
+  console.log('✅ Notification shown:', data.title);
+}
+
+// Periodic check every 2 minutes
+let pollingInterval = null;
+
+function startPolling() {
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+  }
+
+  // Check immediately
+  checkForNewNotifications();
+
+  // Then check every 2 minutes
+  pollingInterval = setInterval(() => {
+    checkForNewNotifications();
+  }, 2 * 60 * 1000); // 2 minutes
+
+  console.log('⏰ Polling started - checking every 2 minutes');
+}
+
+function stopPolling() {
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+    console.log('⏸️ Polling stopped');
+  }
+}
 
 self.addEventListener('install', (event) => {
-  console.log('⚙️ SW Installing (FCM version)...');
+  console.log('⚙️ SW Installing (Polling version)...');
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('✅ SW Activated (FCM version)');
+  console.log('✅ SW Activated (Polling version)');
   event.waitUntil(
     Promise.all([
       self.clients.claim(),
       caches.keys().then(keys => {
-        // Clean old caches
         return Promise.all(
-          keys.filter(key => key.startsWith('notif-'))
+          keys.filter(key => key.startsWith('notif-') && key !== 'notif-v32')
             .map(key => caches.delete(key))
         );
       })
-    ])
-  );
-});
-
-self.addEventListener('notificationclick', function (event) {
-  console.log('🖱️ Notification clicked');
-  event.notification.close();
-
-  const urlToOpen = event.notification.data?.url || self.location.origin;
-
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
-      // Check if there's already a window open
-      for (let client of windowClients) {
-        if (client.url === urlToOpen && 'focus' in client) {
-          return client.focus();
-        }
-      }
-      // If not, open a new window
-      if (clients.openWindow) {
-        return clients.openWindow(urlToOpen);
-      }
+    ]).then(() => {
+      startPolling();
     })
   );
 });
 
-// Keep SW responsive
-self.addEventListener('message', (event) => {
-  if (event.data?.type === 'PING') {
-    console.log('🏓 PING received');
-    event.ports[0]?.postMessage({ status: 'alive', type: 'FCM' });
+// Keep polling active on fetch events
+self.addEventListener('fetch', (event) => {
+  if (!pollingInterval) {
+    console.log('🔄 Restarting polling on fetch');
+    startPolling();
   }
 });
 
-console.log('🚀 Service Worker ready and listening for FCM messages');
+// Respond to PING messages from the app
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'PING') {
+    if (!pollingInterval) {
+      console.log('🔄 Restarting polling on PING');
+      startPolling();
+    }
+    // Also do an immediate check
+    checkForNewNotifications();
+    event.ports[0]?.postMessage({ status: 'alive', polling: !!pollingInterval });
+  }
+
+  if (event.data?.type === 'CHECK_NOW') {
+    console.log('🔔 Manual check requested');
+    checkForNewNotifications();
+  }
+});
+
+self.addEventListener('notificationclick', (event) => {
+  console.log('🖱️ Notification clicked');
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      if (clientList.length > 0) {
+        return clientList[0].focus();
+      }
+      return self.clients.openWindow(event.notification.data.url || './');
+    })
+  );
+});
+
+console.log('🚀 Service Worker ready with polling mechanism (no Cloud Functions needed!)');
