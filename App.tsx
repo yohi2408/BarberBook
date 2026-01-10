@@ -103,10 +103,13 @@ function App() {
       const dayName = dateObj.toLocaleDateString('he-IL', { weekday: 'long' });
       const formattedDate = dateObj.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' });
 
-      await storageService.broadcastNotification(
-        '🔥 התפנה תור חדש!',
-        `התפנה תור ביום ${dayName} בתאריך ${formattedDate} בשעה ${apptToCancel.time}. רוצו לתפוס!`
-      );
+      const title = '🔥 התפנה תור חדש!';
+      const body = `התפנה תור ביום ${dayName} בתאריך ${formattedDate} בשעה ${apptToCancel.time}. רוצו לתפוס!`;
+
+      // 1. Keep history in DB
+      await storageService.broadcastNotification(title, body);
+      // 2. Send actual Push (Direct Client-to-FCM)
+      await messagingService.sendMulticastNotification(title, body);
     }
   };
 
@@ -117,10 +120,11 @@ function App() {
     await storageService.saveSettings(newSettings);
 
     if (newDaysCount > oldDaysCount) {
-      await storageService.broadcastNotification(
-        '✂️ תורים חדשים נפתחו!',
-        'הספר פתח מועדים חדשים ביומן. היכנסו עכשיו לקבוע תור!'
-      );
+      const title = '✂️ תורים חדשים נפתחו!';
+      const body = 'הספר פתח מועדים חדשים ביומן. היכנסו עכשיו לקבוע תור!';
+
+      await storageService.broadcastNotification(title, body);
+      await messagingService.sendMulticastNotification(title, body);
     }
   };
 

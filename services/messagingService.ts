@@ -1,6 +1,7 @@
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
-import { firebaseApp } from '../firebaseConfig';
+import { firebaseApp, db } from '../firebaseConfig';
 import { storageService } from './storageService';
+import { collection, query, getDocs } from 'firebase/firestore';
 
 const messaging = getMessaging(firebaseApp);
 
@@ -43,21 +44,63 @@ export const messagingService = {
     }
   },
 
-  // Send notification to specific tokens (client-side push)
-  async sendNotificationToTokens(tokens: string[], title: string, body: string) {
+  // Send notification directly from Client (Admin) to FCM
+  // bypassing Cloud Functions (Spark Plan compatible)
+  async sendMulticastNotification(title: string, body: string, url: string = '/') {
     try {
-      // We'll use Firebase Admin SDK via a simple HTTP endpoint
-      // For now, we'll just log - you'll need to set up a simple backend
-      console.log('📤 Would send notification to', tokens.length, 'devices');
-      console.log('Title:', title);
-      console.log('Body:', body);
+      console.log('🔄 Fetching tokens for broadcast...');
+      // Get all tokens
+      const q = query(collection(db, 'fcm_tokens'));
+      const snapshot = await getDocs(q);
 
-      // TODO: Implement actual sending via Firebase Cloud Messaging REST API
-      // This requires a server endpoint or Cloud Function
+      const tokens = snapshot.docs.map(d => d.data().token).filter(Boolean);
 
+      if (tokens.length === 0) {
+        console.log('⚠️ No devices to notify.');
+        return;
+      }
+
+      console.log(`📤 Sending to ${tokens.length} devices...`);
+
+      // SERVER KEY from Firebase Console -> Project Settings -> Cloud Messaging -> Cloud Messaging API (Legacy)
+      // TODO: Replace this!
+      const SERVER_KEY = 'REPLACE_WITH_YOUR_SERVER_KEY_AAA...';
+
+      // Send in batches of 1 to avoid complexity (or use registration_ids for up to 1000)
+      // Using registration_ids is efficient
+
+      const batches = [];
+      while (tokens.length > 0) {
+        batches.push(tokens.splice(0, 1000));
+      }
+
+      for (const batch of batches) {
+        await fetch('https://fcm.googleapis.com/fcm/send', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `key=${SERVER_KEY}`
+          },
+          body: JSON.stringify({
+            registration_ids: batch,
+            notification: {
+              title: title,
+              body: body,
+              icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+              click_action: url
+            },
+            data: {
+              url: url
+            }
+          })
+        });
+      }
+
+      console.log('✅ Broadcast sent successfully via Client!');
       return true;
+
     } catch (err) {
-      console.error('Error sending notifications:', err);
+      console.error('❌ Error sending direct notifications:', err);
       return false;
     }
   },
