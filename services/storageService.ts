@@ -24,6 +24,27 @@ const NOTIFICATIONS_COLLECTION = 'broadcast_notifications';
 const SETTINGS_DOC_ID = 'business_settings';
 
 export const storageService = {
+  // Live listener for appointments
+  subscribeToAppointments: (callback: (appts: Appointment[]) => void) => {
+    const q = query(collection(db, APPOINTMENTS_COLLECTION), orderBy('createdAt', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      const appts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Appointment));
+      callback(appts);
+    });
+  },
+
+  // Live listener for business settings (calendar, shop name, etc)
+  subscribeToSettings: (callback: (settings: BusinessSettings) => void) => {
+    const docRef = doc(db, SETTINGS_COLLECTION, SETTINGS_DOC_ID);
+    return onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        callback({ ...DEFAULT_SETTINGS, ...docSnap.data() } as BusinessSettings);
+      } else {
+        callback(DEFAULT_SETTINGS);
+      }
+    });
+  },
+
   getAppointments: async (): Promise<Appointment[]> => {
     try {
       const q = query(collection(db, APPOINTMENTS_COLLECTION), orderBy('createdAt', 'desc'));
@@ -66,7 +87,6 @@ export const storageService = {
   },
 
   onNotificationReceived(callback: (notif: BroadcastNotification) => void) {
-    // Session-based listening: capture anything added after this exact moment
     const sessionStart = Date.now();
     const q = query(
       collection(db, NOTIFICATIONS_COLLECTION),
@@ -76,7 +96,6 @@ export const storageService = {
 
     return onSnapshot(q, (snapshot) => {
       snapshot.docChanges().forEach((change) => {
-        // Only trigger for NEW documents added during this session
         if (change.type === "added") {
           const data = change.doc.data();
           if (data.createdAt && data.createdAt > sessionStart) {

@@ -1,5 +1,5 @@
 
-// Service Worker for BarberBook Pro - v15 (Background Listener Edition)
+// Service Worker for BarberBook Pro - v16 (Live Background Edition)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, collection, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
@@ -15,37 +15,42 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-const CACHE_NAME = 'barberbook-v15';
 const sessionStart = Date.now();
 
-// Background Listener for Notifications
-const q = query(
-  collection(db, 'broadcast_notifications'),
-  orderBy('createdAt', 'desc'),
-  limit(1)
-);
+// Persistent listener function
+function startBackgroundListener() {
+    const q = query(
+      collection(db, 'broadcast_notifications'),
+      orderBy('createdAt', 'desc'),
+      limit(1)
+    );
 
-// This listener runs in the background process of the mobile device
-onSnapshot(q, (snapshot) => {
-  snapshot.docChanges().forEach((change) => {
-    if (change.type === "added") {
-      const data = change.doc.data();
-      // Only show if the notification was created AFTER this worker started
-      if (data.createdAt && data.createdAt > sessionStart) {
-        const options = {
-          body: data.body,
-          icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-          badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-          tag: change.doc.id,
-          renotify: true,
-          vibrate: [300, 100, 300],
-          data: { url: '/BarberBook/' }
-        };
-        self.registration.showNotification(data.title, options);
-      }
-    }
-  });
-});
+    return onSnapshot(q, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === "added") {
+          const data = change.doc.data();
+          if (data.createdAt && data.createdAt > sessionStart) {
+            const options = {
+              body: data.body,
+              icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+              badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+              tag: change.doc.id,
+              renotify: true,
+              vibrate: [300, 100, 300],
+              data: { url: '/BarberBook/' }
+            };
+            self.registration.showNotification(data.title, options);
+          }
+        }
+      });
+    }, (error) => {
+        console.error("SW Background listener error, restarting in 5s...", error);
+        setTimeout(startBackgroundListener, 5000);
+    });
+}
+
+// Start immediately
+startBackgroundListener();
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -64,3 +69,11 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
+
+// Periodically wake up the service worker (hack for mobile)
+setInterval(() => {
+    // This empty message helps keep the SW alive in some environments
+    self.clients.matchAll().then(clients => {
+        clients.forEach(client => client.postMessage({ type: 'PING' }));
+    });
+}, 30000);

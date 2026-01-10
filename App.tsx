@@ -25,63 +25,44 @@ function App() {
   const [toast, setToast] = useState({ visible: false, message: '', subMessage: '' });
   const processedNotifs = useRef<Set<string>>(new Set());
 
-  // Task: Requirement 3 - "Day Before" Reminder
-  useEffect(() => {
-    if (!user || user.role !== UserRole.CLIENT || appointments.length === 0) return;
-
-    const checkReminders = () => {
-        const tomorrow = addDays(new Date(), 1);
-        const tomorrowStr = format(tomorrow, 'yyyy-MM-dd');
-        
-        const myTomorrowAppt = appointments.find(appt => 
-            appt.customerPhone === user.phoneNumber && 
-            appt.date === tomorrowStr &&
-            appt.status !== 'cancelled'
-        );
-
-        if (myTomorrowAppt) {
-            const reminderKey = `reminder_sent_${myTomorrowAppt.id}`;
-            const todayStr = format(new Date(), 'yyyy-MM-dd');
-            
-            if (localStorage.getItem(reminderKey) !== todayStr) {
-                notificationService.sendLocalNotification(
-                    'תזכורת לתור שלך מחר! 💈',
-                    `מחכים לך מחר ביום ${format(tomorrow, 'EEEE', {locale: (window as any).he})} בשעה ${myTomorrowAppt.time}.`
-                );
-                localStorage.setItem(reminderKey, todayStr);
-            }
-        }
-    };
-
-    checkReminders();
-  }, [user, appointments]);
-
-  // Task: Requirement 1 & 2 - Real-time Broadcasts (Slots & Cancellations)
+  // Real-time synchronization
   useEffect(() => {
     if (!user) return;
-    const unsubscribe = storageService.onNotificationReceived((notif) => {
+
+    // Listen to appointments live
+    const unsubAppts = storageService.subscribeToAppointments((data) => {
+      setAppointments(data);
+    });
+
+    // Listen to settings/calendar live
+    const unsubSettings = storageService.subscribeToSettings((data) => {
+      setSettings(data);
+    });
+
+    // Listen to broadcasts
+    const unsubNotifs = storageService.onNotificationReceived((notif) => {
       if (processedNotifs.current.has(notif.id)) return;
       processedNotifs.current.add(notif.id);
       notificationService.sendLocalNotification(notif.title, notif.body);
     });
-    return () => unsubscribe();
+
+    return () => {
+      unsubAppts();
+      unsubSettings();
+      unsubNotifs();
+    };
   }, [user]);
 
+  // Initial load for user session
   useEffect(() => {
     const init = async () => {
       const currentUser = storageService.getCurrentUser();
       if (currentUser) {
         setUser(currentUser);
-        const [appts, sets] = await Promise.all([
-          storageService.getAppointments(),
-          storageService.getSettings()
-        ]);
-        setAppointments(appts);
-        setSettings(sets);
       }
       setLoading(false);
       
-      if (Notification.permission === 'granted') {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
         await notificationService.registerServiceWorker();
       }
     };
@@ -94,15 +75,6 @@ function App() {
 
   const handleLogin = (loggedUser: User) => {
     setUser(loggedUser);
-    const loadData = async () => {
-      const [appts, sets] = await Promise.all([
-        storageService.getAppointments(),
-        storageService.getSettings()
-      ]);
-      setAppointments(appts);
-      setSettings(sets);
-    };
-    loadData();
   };
 
   const handleLogout = () => {
@@ -112,20 +84,12 @@ function App() {
   };
 
   const handleBooking = async (appointment: Appointment): Promise<boolean> => {
-    const success = await storageService.saveAppointment(appointment);
-    if (success) {
-      const updatedList = await storageService.getAppointments();
-      setAppointments(updatedList);
-      return true;
-    }
-    return false;
+    return await storageService.saveAppointment(appointment);
   };
 
   const handleCancelAppointment = async (id: string) => {
     const apptToCancel = appointments.find(a => a.id === id);
     await storageService.deleteAppointment(id);
-    const updatedList = await storageService.getAppointments();
-    setAppointments(updatedList);
     showToast('התור בוטל בהצלחה');
     
     if (apptToCancel) {
@@ -146,7 +110,6 @@ function App() {
     const newDaysCount = Object.keys(newSettings.calendar || {}).filter(k => newSettings.calendar[k].isWorking).length;
     
     await storageService.saveSettings(newSettings);
-    setSettings(newSettings);
 
     if (newDaysCount > oldDaysCount) {
        await storageService.broadcastNotification(
