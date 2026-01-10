@@ -81,36 +81,6 @@ export const notificationService = {
     }
   },
 
-  // Trigger Push Notification via Cloudflare Worker
-  async sendPushToAll(title: string, body: string) {
-    try {
-      // 1. Get all subscriptions from Firestore
-      const subscriptions = await storageService.getAllSubscriptions();
-      console.log(`📡 Sending push to ${subscriptions.length} subscribers...`);
-
-      if (subscriptions.length === 0) return;
-
-      const WORKER_URL = "https://barberbook-push.ditnum01.workers.dev";
-
-      const promises = subscriptions.map((sub: any) =>
-        fetch(WORKER_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            subscription: sub,
-            payload: { title, body }
-          })
-        }).catch(err => console.error("Push failed for one sub", err))
-      );
-
-      await Promise.all(promises);
-      console.log("✅ Push sent to all subscribers!");
-
-    } catch (error) {
-      console.error("❌ Error sending push:", error);
-    }
-  },
-
   // Missing methods restored below to fix AdminDashboard errors
   async getStatus() {
     let permission = 'default';
