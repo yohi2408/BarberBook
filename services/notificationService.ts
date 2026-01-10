@@ -1,24 +1,11 @@
 
 export const notificationService = {
-  isIOS() {
-    return /iPad|iPhone|iPod/.test(navigator.userAgent);
-  },
-
-  isPWA() {
-    return (window.navigator as any).standalone === true || window.matchMedia('(display-mode: standalone)').matches;
-  },
-
   async requestPermission() {
-    console.log('[NOTIF] Request permission - iOS:', this.isIOS(), 'PWA:', this.isPWA());
-
     if (!('Notification' in window)) {
-      alert('התראות לא נתמכות בדפדפן זה.');
       return false;
     }
 
     const permission = await Notification.requestPermission();
-    console.log('[NOTIF] Permission:', permission);
-    
     if (permission === 'granted') {
       await this.registerServiceWorker();
       return true;
@@ -30,21 +17,23 @@ export const notificationService = {
     if (!('serviceWorker' in navigator)) return null;
     
     try {
-      const basePath = window.location.pathname.split('/').slice(0, -1).join('/') || '/';
-      console.log('[SW] Register at:', basePath);
-
-      const registration = await navigator.serviceWorker.register('sw.js', { scope: basePath });
+      // Use absolute path for GitHub Pages
+      const registration = await navigator.serviceWorker.register('/BarberBook/sw.js', {
+        scope: '/BarberBook/'
+      });
       
-      // iOS PWA might need extra time
-      if (this.isIOS() && this.isPWA()) {
-        await new Promise(r => setTimeout(r, 1000));
+      // Wait for the service worker to be active
+      if (registration.installing) {
+        await new Promise<void>((resolve) => {
+          registration.installing?.addEventListener('statechange', (e: any) => {
+            if (e.target.state === 'activated') resolve();
+          });
+        });
       }
       
-      await registration.update();
-      console.log('[SW] ✅ OK', { scope: registration.scope, active: !!registration.active, controller: !!navigator.serviceWorker.controller });
       return registration;
     } catch (error) {
-      console.error('[SW] ❌ Failed:', error);
+      console.error('SW registration failed:', error);
       return null;
     }
   },
@@ -53,34 +42,23 @@ export const notificationService = {
     if (Notification.permission !== 'granted') return;
 
     try {
-      const isiOS = this.isIOS();
-      const controller = navigator.serviceWorker.controller;
-      const finalDelay = delay || (isiOS ? 2000 : 1000);
-      
-      console.log('[NOTIF] Send:', { title, isiOS, hasController: !!controller, delay: finalDelay });
-
-      if (controller) {
-        console.log('[NOTIF] ✅ postMessage');
-        controller.postMessage({
-          type: 'SHOW_NOTIFICATION',
-          payload: { title, body, delay: finalDelay }
-        });
-        return;
-      }
-
       const registration = await navigator.serviceWorker.ready;
-      if (registration.active) {
-        console.log('[NOTIF] ✅ active.postMessage');
+      
+      if (registration && registration.active) {
+        // We use postMessage to the ACTIVE service worker
         registration.active.postMessage({
           type: 'SHOW_NOTIFICATION',
-          payload: { title, body, delay: finalDelay }
+          payload: { title, body, delay }
         });
+        return true;
       } else {
-        console.log('[NOTIF] ⚠️ fallback');
-        await registration.showNotification(title, { body });
+        // Fallback to direct show if SW not ready (works only in foreground)
+        registration.showNotification(title, { body });
+        return false;
       }
     } catch (e) {
-      console.error('[NOTIF] Error:', e);
+      console.error('Notification failed:', e);
+      return false;
     }
   }
 };

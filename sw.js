@@ -1,56 +1,58 @@
 
-// Service Worker for BarberBook Pro - iOS PWA optimized
-const CACHE_NAME = 'barberbook-v5';
+// Service Worker for BarberBook Pro - v6 (Final Fix)
+const CACHE_NAME = 'barberbook-v6';
 
 self.addEventListener('install', (event) => {
-  console.log('[SW] install');
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('[SW] activate');
   event.waitUntil(self.clients.claim());
 });
 
-// Handle messages from client (iOS PWA friendly)
+// The core fix for iOS Background Notifications
 self.addEventListener('message', (event) => {
-  console.log('[SW] message:', event.data?.type);
-  
   if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
     const { title, body, delay } = event.data.payload;
     
-    const show = () => {
-      const options = {
-        body: body,
-        icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-        badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-        vibrate: [200, 100, 200],
-        tag: 'barber-notif',
-        renotify: true,
-        data: { url: '/' }
-      };
-      console.log('[SW] show:', title);
-      self.registration.showNotification(title, options).catch(err => {
-        console.error('[SW] showNotification error:', err);
-      });
-    };
+    // We MUST wrap the timer in a Promise and pass it to event.waitUntil
+    // This tells iOS to keep the SW alive until the notification is shown
+    const notificationPromise = new Promise((resolve) => {
+      const timeoutId = setTimeout(async () => {
+        try {
+          await self.registration.showNotification(title, {
+            body: body,
+            icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+            badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+            vibrate: [200, 100, 200],
+            tag: 'barber-appointment',
+            renotify: true,
+            data: { url: '/BarberBook/' }
+          });
+        } catch (err) {
+          console.error('Notification show error:', err);
+        } finally {
+          resolve();
+        }
+      }, delay || 0);
+    });
 
-    if (delay && delay > 0) {
-      console.log('[SW] delayed:', delay);
-      setTimeout(show, delay);
-    } else {
-      show();
-    }
+    event.waitUntil(notificationPromise);
   }
 });
 
 self.addEventListener('notificationclick', (event) => {
-  console.log('[SW] click');
   event.notification.close();
   event.waitUntil(
-    clients.matchAll({ type: 'window' }).then((clientList) => {
-      if (clientList.length > 0) return clientList[0].focus();
-      return clients.openWindow('/');
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.includes('/BarberBook/') && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow('/BarberBook/');
+      }
     })
   );
 });
