@@ -26,7 +26,6 @@ function App() {
   const processedNotifs = useRef<Set<string>>(new Set());
 
   // Task: Requirement 3 - "Day Before" Reminder
-  // We check this whenever the user opens the app or data updates
   useEffect(() => {
     if (!user || user.role !== UserRole.CLIENT || appointments.length === 0) return;
 
@@ -44,7 +43,6 @@ function App() {
             const reminderKey = `reminder_sent_${myTomorrowAppt.id}`;
             const todayStr = format(new Date(), 'yyyy-MM-dd');
             
-            // Send only once per appointment per day (to ensure they get it even if they open the app twice)
             if (localStorage.getItem(reminderKey) !== todayStr) {
                 notificationService.sendLocalNotification(
                     'תזכורת לתור שלך מחר! 💈',
@@ -62,11 +60,8 @@ function App() {
   useEffect(() => {
     if (!user) return;
     const unsubscribe = storageService.onNotificationReceived((notif) => {
-      // Prevent duplicate processing of the same notification ID
       if (processedNotifs.current.has(notif.id)) return;
       processedNotifs.current.add(notif.id);
-      
-      // Trigger the local push notification
       notificationService.sendLocalNotification(notif.title, notif.body);
     });
     return () => unsubscribe();
@@ -133,7 +128,6 @@ function App() {
     setAppointments(updatedList);
     showToast('התור בוטל בהצלחה');
     
-    // Broadcast for Requirement 2
     if (apptToCancel) {
       const [year, month, day] = apptToCancel.date.split('-').map(Number);
       const dateObj = new Date(year, month - 1, day);
@@ -148,14 +142,13 @@ function App() {
   };
 
   const handleUpdateSettings = async (newSettings: BusinessSettings) => {
-    const oldDays = Object.keys(settings.calendar || {}).filter(k => settings.calendar[k].isWorking).length;
-    const newDays = Object.keys(newSettings.calendar || {}).filter(k => newSettings.calendar[k].isWorking).length;
+    const oldDaysCount = Object.keys(settings.calendar || {}).filter(k => settings.calendar[k].isWorking).length;
+    const newDaysCount = Object.keys(newSettings.calendar || {}).filter(k => newSettings.calendar[k].isWorking).length;
     
     await storageService.saveSettings(newSettings);
     setSettings(newSettings);
 
-    // Broadcast for Requirement 1
-    if (newDays > oldDays) {
+    if (newDaysCount > oldDaysCount) {
        await storageService.broadcastNotification(
          '✂️ תורים חדשים נפתחו!',
          'הספר פתח מועדים חדשים ביומן. היכנסו עכשיו לקבוע תור!'
@@ -209,7 +202,7 @@ function App() {
         {user.role === UserRole.CLIENT ? (
           <ClientBooking user={user} settings={settings} existingAppointments={appointments} onBook={handleBooking} onShowToast={showToast} onCancelAppointment={handleCancelAppointment} />
         ) : (
-          <AdminDashboard appointments={appointments} settings={settings} onCancelAppointment={handleCancelAppointment} onUpdateSettings={handleUpdateSettings} />
+          <AdminDashboard appointments={appointments} settings={settings} onCancelAppointment={handleCancelAppointment} onUpdateSettings={handleUpdateSettings} onShowToast={showToast} />
         )}
       </main>
       <InstallPWA />

@@ -1,16 +1,17 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Appointment, BusinessSettings, TimeRange, DEFAULT_SETTINGS, Service, DaySchedule } from '../types';
-import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, addMonths, subMonths } from 'date-fns';
 import he from 'date-fns/locale/he';
-import { Trash2, Calendar, Phone, Settings, Plus, X, Archive, History, Scissors, Clock, ChevronRight, ChevronLeft, Check } from 'lucide-react';
+import { Trash2, Calendar, Settings, X, Archive, History, Scissors, ChevronRight, ChevronLeft, Check, Loader2 } from 'lucide-react';
 import { Button } from './Button';
 
 interface AdminDashboardProps {
   appointments: Appointment[];
   settings: BusinessSettings;
   onCancelAppointment: (id: string) => void;
-  onUpdateSettings: (settings: BusinessSettings) => void;
+  onUpdateSettings: (settings: BusinessSettings) => Promise<void>;
+  onShowToast: (msg: string, sub?: string) => void;
 }
 
 const parseLocalDate = (dateStr: string) => {
@@ -22,7 +23,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   appointments, 
   settings, 
   onCancelAppointment, 
-  onUpdateSettings 
+  onUpdateSettings,
+  onShowToast
 }) => {
   const [activeTab, setActiveTab] = useState<'appointments' | 'settings' | 'services'>('appointments');
   const [showHistory, setShowHistory] = useState(false);
@@ -73,11 +75,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return acc;
     }, {} as Record<string, Appointment[]>);
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    onUpdateSettings(tempSettings);
-    setTimeout(() => setSaving(false), 500);
+    try {
+      await onUpdateSettings(tempSettings);
+      onShowToast('הגדרות נשמרו בהצלחה!', 'הודעות על תורים חדשים נשלחו ללקוחות');
+    } catch (err) {
+      onShowToast('שגיאה בשמירה', 'נסה שוב מאוחר יותר');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDateClick = (day: Date) => {
@@ -129,6 +137,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setTempSettings(updatedSettings);
     onUpdateSettings(updatedSettings);
     setNewService({ name: '', price: 0 });
+    onShowToast('שירות נוסף בהצלחה');
   };
 
   const handleDeleteService = (id: string) => {
@@ -136,6 +145,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const updatedSettings = { ...tempSettings, services: tempSettings.services.filter(s => s.id !== id) };
       setTempSettings(updatedSettings);
       onUpdateSettings(updatedSettings);
+      onShowToast('שירות נמחק');
   };
 
   const selectedDayConfig = getDayConfig(selectedDateStr);
@@ -234,8 +244,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
 
           <div>
-            <div className="flex justify-between items-center mb-4">
-                <h3 className="text-sm font-bold text-white">לוח ימי עבודה</h3>
+            <div className="flex justify-between items-center mb-4 px-2">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2"><Calendar size={16} className="text-gold-500" /> לוח ימי עבודה</h3>
                 <div className="flex items-center gap-2">
                     <button type="button" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="p-1 glass rounded-full"><ChevronRight size={14}/></button>
                     <span className="text-xs font-bold text-white">{format(currentMonth, 'MMMM yyyy', {locale: he})}</span>
@@ -253,7 +263,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         const isWorking = tempSettings.calendar[dateKey]?.isWorking;
                         const isSelected = dateKey === selectedDateStr;
                         return (
-                            <button key={dateKey} type="button" onClick={() => handleDateClick(day)} className={`h-10 rounded-lg flex items-center justify-center text-xs font-bold transition-all ${!isSameMonth(day, currentMonth) ? 'opacity-20' : ''} ${isSelected ? 'ring-2 ring-gold-500' : ''} ${isWorking ? 'bg-gold-500/20 text-gold-500 border border-gold-500/30' : 'bg-white/5 text-gray-400'}`}>{format(day, 'd')}</button>
+                            <button key={dateKey} type="button" onClick={() => handleDateClick(day)} className={`h-10 rounded-lg flex items-center justify-center text-xs font-bold transition-all ${!isSameMonth(day, currentMonth) ? 'opacity-20' : ''} ${isSelected ? 'ring-2 ring-gold-500 shadow-[0_0_15px_rgba(212,175,55,0.3)]' : ''} ${isWorking ? 'bg-gold-500/20 text-gold-500 border border-gold-500/30' : 'bg-white/5 text-gray-400'}`}>{format(day, 'd')}</button>
                         );
                     })}
                 </div>
@@ -262,7 +272,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="glass-panel p-5 rounded-3xl border-t-2 border-gold-500">
                  <div className="flex justify-between items-center mb-4">
                      <div className="text-sm font-bold text-white">{format(selectedDateObj, 'EEEE d MMMM', {locale: he})}</div>
-                     <div onClick={() => updateDayIsWorking(selectedDateStr, !selectedDayConfig.isWorking)} className={`cursor-pointer px-3 py-1.5 rounded-full font-bold text-[10px] flex items-center gap-2 ${selectedDayConfig.isWorking ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
+                     <div onClick={() => updateDayIsWorking(selectedDateStr, !selectedDayConfig.isWorking)} className={`cursor-pointer px-3 py-1.5 rounded-full font-bold text-[10px] flex items-center gap-2 transition-all ${selectedDayConfig.isWorking ? 'bg-green-500/20 text-green-500 border border-green-500/30' : 'bg-red-500/20 text-red-500 border border-red-500/30'}`}>
                          {selectedDayConfig.isWorking ? <Check size={12} /> : <X size={12} />}
                          {selectedDayConfig.isWorking ? 'פתוח' : 'סגור'}
                      </div>
@@ -277,16 +287,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     <input type="time" value={range.end} onChange={(e) => updateTimeRange(selectedDateStr, idx, 'end', e.target.value)} className="bg-transparent text-white text-center w-full p-2 outline-none text-xs" />
                                 </div>
                                 {selectedDayConfig.timeRanges.length > 1 && (
-                                    <button type="button" onClick={() => removeTimeRange(selectedDateStr, idx)} className="text-gray-500"><X size={14}/></button>
+                                    <button type="button" onClick={() => removeTimeRange(selectedDateStr, idx)} className="text-gray-500 hover:text-red-500 transition-colors"><X size={14}/></button>
                                 )}
                              </div>
                          ))}
-                         <button type="button" onClick={() => addTimeRange(selectedDateStr)} className="w-full py-2 text-xs border border-dashed border-white/20 text-gray-400 font-bold rounded-lg">+ הוסף משמרת</button>
+                         <button type="button" onClick={() => addTimeRange(selectedDateStr)} className="w-full py-2.5 text-[11px] border border-dashed border-white/20 text-gray-400 font-bold rounded-lg hover:border-gold-500/50 hover:text-white transition-all">+ הוסף משמרת</button>
                      </div>
                  )}
             </div>
           </div>
-          <Button type="submit" fullWidth disabled={saving} className="shadow-lg py-4">שמור ושלח עדכון ללקוחות</Button>
+          <Button type="submit" fullWidth isLoading={saving} className="shadow-lg py-4 text-lg">
+            {saving ? 'שומר ומעדכן...' : 'שמור ושלח עדכון ללקוחות'}
+          </Button>
         </form>
       )}
     </div>
