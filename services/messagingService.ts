@@ -83,11 +83,8 @@ export const messagingService = {
           },
           body: JSON.stringify({
             tokens: batch,
-            notification: {
-              title: title,
-              body: body,
-              click_action: url
-            },
+            // DATA-ONLY Payload: Prevents double notifications
+            notification: null,
             data: {
               title: title,
               body: body,

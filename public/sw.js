@@ -32,30 +32,26 @@ function isDuplicate(id) {
 messaging.onBackgroundMessage((payload) => {
   console.log('[sw.js] Received background message ', payload);
 
-  // If the payload has a 'notification' property, the browser automatically shows it.
-  // We return here to prevent showing a second (duplicate) notification manually.
-  if (payload.notification) {
-    console.log('[sw.js] System handled notification automatically. Skipping manual display.');
-    return;
-  }
+  // Prefer data (manual) over notification (auto)
+  const data = payload.data || {};
+  const notification = payload.notification || {};
 
-  const notificationTitle = payload.data?.title || 'BarberBook';
+  const title = data.title || notification.title || 'BarberBook';
+  const body = data.body || notification.body || '';
+  const icon = data.icon || 'https://cdn-icons-png.flaticon.com/512/32/32441.png';
+  const clickUrl = data.click_action || data.url || '/';
+
   const notificationOptions = {
-    body: payload.notification?.body,
-    icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-    badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-    data: payload.data,
-    tag: payload.messageId || 'barber-notification', // Replace tag to prevent stacking/duplication if needed
+    body: body,
+    icon: icon,
+    badge: icon,
+    data: { url: clickUrl }, // Store URL in data for click handler
+    tag: 'barber-notification',
     renotify: true,
     requireInteraction: true
   };
 
-  if (payload.messageId && isDuplicate(payload.messageId)) {
-    console.log('Ignoring duplicate message:', payload.messageId);
-    return;
-  }
-
-  return self.registration.showNotification(notificationTitle, notificationOptions);
+  return self.registration.showNotification(title, notificationOptions);
 });
 
 // Click Handler
