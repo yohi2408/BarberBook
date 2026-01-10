@@ -1,5 +1,5 @@
 
-// Service Worker for BarberBook Pro - v33 (Real-time + Free!)
+// Service Worker for BarberBook Pro - v35 (Firestore + Wake-up mechanism)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, collection, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
@@ -24,7 +24,7 @@ async function showNotification(docId, data) {
     return;
   }
 
-  const cache = await caches.open('notif-v33');
+  const cache = await caches.open('notif-v35');
   const alreadySent = await cache.match(docId);
   if (alreadySent) return;
 
@@ -46,13 +46,12 @@ async function showNotification(docId, data) {
   console.log('✅ Notification shown:', data.title);
 }
 
-// Real-time listener with auto-restart
 function initListener() {
   if (unsubscribe) {
     try { unsubscribe(); } catch (e) { }
   }
 
-  console.log('🔔 Initializing real-time listener...');
+  console.log('🔔 Initializing listener...');
 
   const q = query(
     collection(db, 'broadcast_notifications'),
@@ -69,7 +68,6 @@ function initListener() {
         const data = doc.data();
         const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
 
-        // Only show if it's recent and new
         if (data.createdAt > tenMinutesAgo && data.createdAt > lastCheckedTimestamp) {
           console.log('New notification:', data.title);
           showNotification(doc.id, data);
@@ -79,26 +77,9 @@ function initListener() {
 
     lastCheckedTimestamp = Date.now();
   }, (err) => {
-    console.error("❌ Listener error, retrying in 5s...", err);
+    console.error("❌ Listener error, retrying...", err);
     setTimeout(initListener, 5000);
   });
-}
-
-// Heartbeat to keep listener alive
-let heartbeatInterval = null;
-
-function startHeartbeat() {
-  if (heartbeatInterval) {
-    clearInterval(heartbeatInterval);
-  }
-
-  // Restart listener every 3 minutes to prevent disconnection
-  heartbeatInterval = setInterval(() => {
-    console.log('💓 Heartbeat - restarting listener');
-    initListener();
-  }, 3 * 60 * 1000);
-
-  console.log('💓 Heartbeat started');
 }
 
 self.addEventListener('install', (event) => {
@@ -113,31 +94,27 @@ self.addEventListener('activate', (event) => {
       self.clients.claim(),
       caches.keys().then(keys => {
         return Promise.all(
-          keys.filter(key => key.startsWith('notif-') && key !== 'notif-v33')
+          keys.filter(key => key.startsWith('notif-') && key !== 'notif-v35')
             .map(key => caches.delete(key))
         );
       })
     ]).then(() => {
       initListener();
-      startHeartbeat();
     })
   );
 });
 
 self.addEventListener('fetch', (event) => {
   if (!unsubscribe) {
-    console.log('🔄 Restarting listener on fetch');
     initListener();
   }
 });
 
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'PING') {
-    if (!unsubscribe) {
-      console.log('🔄 Restarting listener on PING');
-      initListener();
-    }
-    event.ports[0]?.postMessage({ status: 'alive', listening: !!unsubscribe });
+    console.log('🏓 PING - restarting listener');
+    initListener();
+    event.ports[0]?.postMessage({ status: 'alive' });
   }
 });
 
@@ -154,4 +131,4 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-console.log('🚀 Service Worker ready with real-time notifications!');
+console.log('🚀 Service Worker ready!');

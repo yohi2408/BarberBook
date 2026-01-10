@@ -146,7 +146,7 @@ function App() {
     if (granted) {
       setNotifPermission('granted');
       showToast('התראות הופעלו!', 'תקבל עדכון על כל תור שמתפנה');
-      window.location.reload(); // Force refresh to activate new SW engine
+      window.location.reload();
     }
   };
 
