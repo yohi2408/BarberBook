@@ -32,6 +32,13 @@ function isDuplicate(id) {
 messaging.onBackgroundMessage((payload) => {
   console.log('[sw.js] Received background message ', payload);
 
+  // If the payload has a 'notification' property, the browser automatically shows it.
+  // We return here to prevent showing a second (duplicate) notification manually.
+  if (payload.notification) {
+    console.log('[sw.js] System handled notification automatically. Skipping manual display.');
+    return;
+  }
+
   // Prefer data (manual) over notification (auto)
   const data = payload.data || {};
   const notification = payload.notification || {};
