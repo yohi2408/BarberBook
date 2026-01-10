@@ -1,12 +1,24 @@
 
 export const notificationService = {
+  isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent);
+  },
+
+  isPWA() {
+    return (window.navigator as any).standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+  },
+
   async requestPermission() {
+    console.log('[NOTIF] Request permission - iOS:', this.isIOS(), 'PWA:', this.isPWA());
+
     if (!('Notification' in window)) {
       alert('התראות לא נתמכות בדפדפן זה.');
       return false;
     }
 
     const permission = await Notification.requestPermission();
+    console.log('[NOTIF] Permission:', permission);
+    
     if (permission === 'granted') {
       await this.registerServiceWorker();
       return true;
@@ -18,54 +30,57 @@ export const notificationService = {
     if (!('serviceWorker' in navigator)) return null;
     
     try {
-      // Get current path for dynamic scope
       const basePath = window.location.pathname.split('/').slice(0, -1).join('/') || '/';
-      console.log('[CLIENT] Registering SW - current path:', window.location.pathname, 'base:', basePath);
+      console.log('[SW] Register at:', basePath);
 
       const registration = await navigator.serviceWorker.register('sw.js', { scope: basePath });
+      
+      // iOS PWA might need extra time
+      if (this.isIOS() && this.isPWA()) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      
       await registration.update();
-      console.log('[CLIENT] ✅ SW registered:', { scope: registration.scope, active: !!registration.active, controller: !!navigator.serviceWorker.controller });
+      console.log('[SW] ✅ OK', { scope: registration.scope, active: !!registration.active, controller: !!navigator.serviceWorker.controller });
       return registration;
     } catch (error) {
-      console.error('[CLIENT] ❌ SW registration failed:', error);
+      console.error('[SW] ❌ Failed:', error);
       return null;
     }
   },
 
   async sendLocalNotification(title: string, body: string, delay: number = 0) {
-    if (Notification.permission !== 'granted') {
-      console.warn('[CLIENT] ⛔ Notification permission not granted');
-      return;
-    }
+    if (Notification.permission !== 'granted') return;
 
     try {
+      const isiOS = this.isIOS();
       const controller = navigator.serviceWorker.controller;
-      console.log('[CLIENT] 📡 Attempting to send notification:', { title, hasController: !!controller });
+      const finalDelay = delay || (isiOS ? 2000 : 1000);
       
+      console.log('[NOTIF] Send:', { title, isiOS, hasController: !!controller, delay: finalDelay });
+
       if (controller) {
-        console.log('[CLIENT] ✅ Using controller.postMessage');
+        console.log('[NOTIF] ✅ postMessage');
         controller.postMessage({
           type: 'SHOW_NOTIFICATION',
-          payload: { title, body, delay: delay || 1000 }
+          payload: { title, body, delay: finalDelay }
         });
         return;
       }
 
-      console.log('[CLIENT] ⚠️ No controller, trying registration.ready');
       const registration = await navigator.serviceWorker.ready;
-      
       if (registration.active) {
-        console.log('[CLIENT] ✅ Using registration.active.postMessage');
+        console.log('[NOTIF] ✅ active.postMessage');
         registration.active.postMessage({
           type: 'SHOW_NOTIFICATION',
-          payload: { title, body, delay: delay || 1000 }
+          payload: { title, body, delay: finalDelay }
         });
       } else {
-        console.log('[CLIENT] ⚠️ No active SW, using fallback showNotification');
+        console.log('[NOTIF] ⚠️ fallback');
         await registration.showNotification(title, { body });
       }
     } catch (e) {
-      console.error('[CLIENT] ❌ Notification error:', e);
+      console.error('[NOTIF] Error:', e);
     }
   }
 };

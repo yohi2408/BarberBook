@@ -1,21 +1,23 @@
 
-// Service Worker for BarberBook Pro - v5
+// Service Worker for BarberBook Pro - iOS PWA optimized
 const CACHE_NAME = 'barberbook-v5';
 
 self.addEventListener('install', (event) => {
+  console.log('[SW] install');
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
+  console.log('[SW] activate');
   event.waitUntil(self.clients.claim());
 });
 
-// The core fix: Handle the delay INSIDE the service worker
+// Handle messages from client (iOS PWA friendly)
 self.addEventListener('message', (event) => {
-  console.log('[SW MESSAGE] Received:', event.data);
+  console.log('[SW] message:', event.data?.type);
+  
   if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
     const { title, body, delay } = event.data.payload;
-    console.log('[SW] Processing notification:', { title, body, delay });
     
     const show = () => {
       const options = {
@@ -25,29 +27,28 @@ self.addEventListener('message', (event) => {
         vibrate: [200, 100, 200],
         tag: 'barber-notif',
         renotify: true,
-        data: { url: '/BarberBook/' }
+        data: { url: '/' }
       };
-      console.log('[SW] Showing notification:', title);
-      self.registration.showNotification(title, options);
+      console.log('[SW] show:', title);
+      self.registration.showNotification(title, options).catch(err => {
+        console.error('[SW] showNotification error:', err);
+      });
     };
 
-    if (delay) {
-      // If there's a delay, we wait here. SW has a longer life span on backgrounding than the UI thread.
-      console.log('[SW] Scheduling notification after', delay, 'ms');
+    if (delay && delay > 0) {
+      console.log('[SW] delayed:', delay);
       setTimeout(show, delay);
     } else {
       show();
     }
-  } else {
-    console.log('[SW] Message type not SHOW_NOTIFICATION, ignoring');
   }
 });
 
 self.addEventListener('notificationclick', (event) => {
-  console.log('[SW] Notification clicked');
+  console.log('[SW] click');
   event.notification.close();
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+    clients.matchAll({ type: 'window' }).then((clientList) => {
       if (clientList.length > 0) return clientList[0].focus();
       return clients.openWindow('/');
     })
