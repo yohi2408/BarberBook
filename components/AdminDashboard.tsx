@@ -77,11 +77,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
+    
     setSaving(true);
     try {
+      // Execute the update
       await onUpdateSettings(tempSettings);
-      onShowToast('הגדרות נשמרו בהצלחה!', 'הודעות על תורים חדשים נשלחו ללקוחות');
+      
+      // Notify the user with a toast
+      onShowToast('הגדרות נשמרו!', 'התראות נשלחו לכל הלקוחות על התורים החדשים');
+      
+      // Scroll to top to show the toast if needed
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
+      console.error(err);
       onShowToast('שגיאה בשמירה', 'נסה שוב מאוחר יותר');
     } finally {
       setSaving(false);
@@ -130,21 +139,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }));
   };
 
-  const handleAddService = () => {
+  const handleAddService = async () => {
     if (!newService.name || !newService.price) return;
     const service: Service = { id: crypto.randomUUID(), name: newService.name, price: Number(newService.price) };
     const updatedSettings = { ...tempSettings, services: [...(tempSettings.services || []), service] };
     setTempSettings(updatedSettings);
-    onUpdateSettings(updatedSettings);
+    await onUpdateSettings(updatedSettings);
     setNewService({ name: '', price: 0 });
     onShowToast('שירות נוסף בהצלחה');
   };
 
-  const handleDeleteService = (id: string) => {
+  const handleDeleteService = async (id: string) => {
       if(!window.confirm('למחוק שירות?')) return;
       const updatedSettings = { ...tempSettings, services: tempSettings.services.filter(s => s.id !== id) };
       setTempSettings(updatedSettings);
-      onUpdateSettings(updatedSettings);
+      await onUpdateSettings(updatedSettings);
       onShowToast('שירות נמחק');
   };
 
@@ -154,13 +163,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   return (
     <div className="animate-in fade-in duration-500">
       <div className="glass p-1.5 rounded-2xl mb-8 flex gap-2">
-        <button onClick={() => setActiveTab('appointments')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'appointments' ? 'bg-white/10 text-white shadow-lg border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+        <button type="button" onClick={() => setActiveTab('appointments')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'appointments' ? 'bg-white/10 text-white shadow-lg border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
           <Calendar className="inline-block ml-2" size={16} /> תורים
         </button>
-        <button onClick={() => setActiveTab('services')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'services' ? 'bg-white/10 text-white shadow-lg border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+        <button type="button" onClick={() => setActiveTab('services')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'services' ? 'bg-white/10 text-white shadow-lg border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
           <Scissors className="inline-block ml-2" size={16} /> שירותים
         </button>
-        <button onClick={() => setActiveTab('settings')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'settings' ? 'bg-white/10 text-white shadow-lg border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+        <button type="button" onClick={() => setActiveTab('settings')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'settings' ? 'bg-white/10 text-white shadow-lg border border-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
           <Settings className="inline-block ml-2" size={16} /> יומן
         </button>
       </div>
@@ -168,7 +177,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {activeTab === 'appointments' && (
         <div className="space-y-6">
            <div className="flex justify-end">
-              <button onClick={() => setShowHistory(!showHistory)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border ${showHistory ? 'bg-gold-500 text-black border-gold-500' : 'glass text-gray-400 hover:text-white'}`}>
+              <button type="button" onClick={() => setShowHistory(!showHistory)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border ${showHistory ? 'bg-gold-500 text-black border-gold-500' : 'glass text-gray-400 hover:text-white'}`}>
                  {showHistory ? <History size={14} /> : <Archive size={14} />}
                  {showHistory ? 'תורים פעילים' : 'היסטוריה'}
               </button>
@@ -199,7 +208,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
                         </div>
                         {!showHistory && (
-                            <button onClick={() => { if(window.confirm('לבטל תור?')) onCancelAppointment(appt.id); }} className="text-gray-500 hover:text-red-500 p-2">
+                            <button type="button" onClick={() => { if(window.confirm('לבטל תור?')) onCancelAppointment(appt.id); }} className="text-gray-500 hover:text-red-500 p-2">
                                 <Trash2 size={16} />
                             </button>
                         )}
@@ -220,7 +229,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <input type="text" placeholder="שם השירות" value={newService.name} onChange={e => setNewService({...newService, name: e.target.value})} className="glass-input p-3 rounded-xl w-full text-sm" />
                       <input type="number" placeholder="מחיר" value={newService.price || ''} onChange={e => setNewService({...newService, price: Number(e.target.value)})} className="glass-input p-3 rounded-xl w-full text-sm" />
                   </div>
-                  <Button onClick={handleAddService} fullWidth disabled={!newService.name}>שמור שירות</Button>
+                  <Button type="button" onClick={handleAddService} fullWidth disabled={!newService.name}>שמור שירות</Button>
               </div>
               <div className="space-y-2">
                   {tempSettings.services?.map((service) => (
@@ -229,7 +238,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <div className="text-white font-bold">{service.name}</div>
                               <div className="text-xs text-gold-500">{service.price}₪</div>
                           </div>
-                          <button onClick={() => handleDeleteService(service.id)} className="text-gray-500 hover:text-red-500"><Trash2 size={16} /></button>
+                          <button type="button" onClick={() => handleDeleteService(service.id)} className="text-gray-500 hover:text-red-500"><Trash2 size={16} /></button>
                       </div>
                   ))}
               </div>
@@ -237,7 +246,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {activeTab === 'settings' && (
-        <form onSubmit={handleSaveSettings} className="space-y-6 pb-20">
+        <div className="space-y-6 pb-20">
           <div className="glass-panel p-6 rounded-3xl">
               <label className="text-white font-bold block mb-2 text-sm">זמן בין תור לתור (דקות)</label>
               <input type="number" value={tempSettings.slotDurationMinutes || 30} onChange={(e) => setTempSettings({...tempSettings, slotDurationMinutes: Number(e.target.value)})} className="glass-input p-3 rounded-xl w-full text-sm" />
@@ -296,10 +305,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                  )}
             </div>
           </div>
-          <Button type="submit" fullWidth isLoading={saving} className="shadow-lg py-4 text-lg">
+          <Button type="button" onClick={handleSaveSettings} fullWidth isLoading={saving} className="shadow-lg py-4 text-lg">
             {saving ? 'שומר ומעדכן...' : 'שמור ושלח עדכון ללקוחות'}
           </Button>
-        </form>
+        </div>
       )}
     </div>
   );
