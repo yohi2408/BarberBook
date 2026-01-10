@@ -1,5 +1,5 @@
 
-// Service Worker for BarberBook Pro - v16 (Live Background Edition)
+// Service Worker for BarberBook Pro - v17 (Fixed Icon & Persistent Listener)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, collection, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
@@ -16,9 +16,10 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 const sessionStart = Date.now();
+let lastNotifId = null;
 
-// Persistent listener function
 function startBackgroundListener() {
+    console.log("SW: Starting Background Listener...");
     const q = query(
       collection(db, 'broadcast_notifications'),
       orderBy('createdAt', 'desc'),
@@ -29,27 +30,31 @@ function startBackgroundListener() {
       snapshot.docChanges().forEach((change) => {
         if (change.type === "added") {
           const data = change.doc.data();
-          if (data.createdAt && data.createdAt > sessionStart) {
+          const docId = change.doc.id;
+          
+          // Check if this is a fresh notification and not a duplicate
+          if (data.createdAt && data.createdAt > sessionStart && docId !== lastNotifId) {
+            lastNotifId = docId;
             const options = {
               body: data.body,
               icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
               badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-              tag: change.doc.id,
+              tag: docId,
               renotify: true,
               vibrate: [300, 100, 300],
-              data: { url: '/BarberBook/' }
+              data: { url: '/BarberBook/' },
+              requireInteraction: true
             };
             self.registration.showNotification(data.title, options);
           }
         }
       });
     }, (error) => {
-        console.error("SW Background listener error, restarting in 5s...", error);
-        setTimeout(startBackgroundListener, 5000);
+        console.error("SW: Listener Error. Reconnecting...", error);
+        setTimeout(startBackgroundListener, 3000);
     });
 }
 
-// Start immediately
 startBackgroundListener();
 
 self.addEventListener('install', (event) => {
@@ -57,23 +62,30 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    Promise.all([
+      self.clients.claim(),
+      // Ensure listener is active on activation
+      startBackgroundListener()
+    ])
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      if (clientList.length > 0) return clientList[0].focus();
-      return clients.openWindow('/BarberBook/');
+      for (const client of clientList) {
+        if ('focus' in client) return client.focus();
+      }
+      if (clients.openWindow) return clients.openWindow('/BarberBook/');
     })
   );
 });
 
-// Periodically wake up the service worker (hack for mobile)
-setInterval(() => {
-    // This empty message helps keep the SW alive in some environments
-    self.clients.matchAll().then(clients => {
-        clients.forEach(client => client.postMessage({ type: 'PING' }));
-    });
-}, 30000);
+// Wakeup mechanism
+self.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'PING') {
+        console.log("SW: Received Ping");
+    }
+});
