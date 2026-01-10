@@ -75,7 +75,7 @@ export const storageService = {
 
   async broadcastNotification(title: string, body: string, type: 'slot_opened' | 'general' = 'slot_opened') {
     try {
-      // Save to Firestore - Service Worker will pick this up automatically
+      // 1. Save to Firestore (for in-app notifications)
       await addDoc(collection(db, NOTIFICATIONS_COLLECTION), {
         title,
         body,
@@ -83,7 +83,25 @@ export const storageService = {
         createdAt: Date.now()
       });
 
-      console.log('✅ Notification saved to Firestore');
+      // 2. Send Push Notifications via Cloudflare Worker
+      const WORKER_URL = "https://barberbook-push.ditnum01.workers.dev";
+      const q = query(collection(db, 'push_subscriptions'));
+      const snapshot = await getDocs(q);
+      const subscriptions = snapshot.docs.map((doc: any) => doc.data());
+
+      if (subscriptions.length > 0) {
+        const promises = subscriptions.map((sub: any) =>
+          fetch(WORKER_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              subscription: sub,
+              payload: { title, body }
+            })
+          }).catch((e: any) => console.error("Push failed", e))
+        );
+        await Promise.all(promises);
+      }
     } catch (e) {
       console.error("Error broadcasting notification:", e);
     }
