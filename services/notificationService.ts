@@ -13,11 +13,11 @@ export const notificationService = {
   async getStatus() {
     if (!('serviceWorker' in navigator)) return { permission: 'אין תמיכה ב-SW', state: 'אין תמיכה' };
     if (!('Notification' in window)) return { permission: 'אין תמיכה בהתראות', state: 'אין תמיכה' };
-    
+
     // Use getRegistration without arguments to avoid origin mismatch errors in preview environments
     const registration = await navigator.serviceWorker.getRegistration();
     const isStandalone = (window.navigator as any).standalone || window.matchMedia('(display-mode: standalone)').matches;
-    
+
     return {
       permission: Notification.permission,
       state: registration ? (registration.active ? 'פעיל' : (registration.installing ? 'בהתקנה' : 'לא פעיל')) : 'לא מותקן',
@@ -49,11 +49,13 @@ export const notificationService = {
   async registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return null;
     try {
-      // Use a simple relative path for the worker
-      const swUrl = './sw.js'; 
-      
+      // Get the base path dynamically (works for both local and GitHub Pages)
+      const basePath = this.getBasePath();
+      const swUrl = `${basePath}sw.js`;
+
       const registration = await navigator.serviceWorker.register(swUrl, {
-        type: 'module'
+        type: 'module',
+        scope: basePath
       });
 
       if (registration.installing) {
@@ -63,7 +65,7 @@ export const notificationService = {
           }
         });
       }
-      
+
       await registration.update();
       return registration;
     } catch (error) {
