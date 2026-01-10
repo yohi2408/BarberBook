@@ -25,6 +25,16 @@ function App() {
   const [toast, setToast] = useState({ visible: false, message: '', subMessage: '' });
   const processedNotifs = useRef<Set<string>>(new Set());
 
+  // Heartbeat to keep SW alive
+  useEffect(() => {
+    const heartbeat = setInterval(() => {
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({ type: 'PING' });
+        }
+    }, 20000);
+    return () => clearInterval(heartbeat);
+  }, []);
+
   // Real-time synchronization
   useEffect(() => {
     if (!user) return;
@@ -39,13 +49,10 @@ function App() {
       setSettings(data);
     });
 
-    // Listen to broadcasts - ONLY SHOW TOAST HERE TO AVOID DUPLICATES
+    // Listen to broadcasts
     const unsubNotifs = storageService.onNotificationReceived((notif) => {
       if (processedNotifs.current.has(notif.id)) return;
       processedNotifs.current.add(notif.id);
-      
-      // We only show a UI toast if the app is open. 
-      // The Service Worker (sw.js) handles the actual system notification independently.
       showToast(notif.title, notif.body);
     });
 
@@ -56,7 +63,7 @@ function App() {
     };
   }, [user]);
 
-  // Initial load for user session and SW registration
+  // Initial load
   useEffect(() => {
     const init = async () => {
       const currentUser = storageService.getCurrentUser();
@@ -65,14 +72,10 @@ function App() {
       }
       setLoading(false);
       
-      // Try to register SW if permission is already granted
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
         try {
           await notificationService.registerServiceWorker();
-          console.log("App: Service Worker registered on mount");
-        } catch (e) {
-          console.error("App: SW registration failed on mount", e);
-        }
+        } catch (e) {}
       }
     };
     init();
@@ -102,8 +105,7 @@ function App() {
     showToast('התור בוטל בהצלחה');
     
     if (apptToCancel) {
-      const [year, month, day] = apptToCancel.date.split('-').map(Number);
-      const dateObj = new Date(year, month - 1, day);
+      const dateObj = new Date(apptToCancel.date.split('-').map(Number)[0], apptToCancel.date.split('-').map(Number)[1]-1, apptToCancel.date.split('-').map(Number)[2]);
       const dayName = dateObj.toLocaleDateString('he-IL', { weekday: 'long' });
       const formattedDate = dateObj.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' });
       
