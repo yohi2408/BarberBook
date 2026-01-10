@@ -32,7 +32,14 @@ function isDuplicate(id) {
 messaging.onBackgroundMessage((payload) => {
   console.log('[sw.js] Received background message ', payload);
 
-  const notificationTitle = payload.notification?.title || 'BarberBook';
+  // If the payload has a 'notification' property, the browser automatically shows it.
+  // We return here to prevent showing a second (duplicate) notification manually.
+  if (payload.notification) {
+    console.log('[sw.js] System handled notification automatically. Skipping manual display.');
+    return;
+  }
+
+  const notificationTitle = payload.data?.title || 'BarberBook';
   const notificationOptions = {
     body: payload.notification?.body,
     icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',

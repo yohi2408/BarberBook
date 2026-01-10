@@ -83,9 +83,11 @@ export const messagingService = {
           },
           body: JSON.stringify({
             tokens: batch,
-            // We put content in DATA only to prevent auto-display by browser
-            // Our Service Worker will read this data and show the notification manually
-            notification: null,
+            notification: {
+              title: title,
+              body: body,
+              click_action: url
+            },
             data: {
               title: title,
               body: body,
