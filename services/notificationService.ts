@@ -1,9 +1,9 @@
 
 import { storageService } from './storageService';
 
-// REPLACE THIS WITH YOUR GENERATED PUBLIC KEY FROM https://vapidkeys.com/
-// example: "BB1...x9s"
-export const VAPID_PUBLIC_KEY = "BOHBh_-nkX9y5veEKGdqszaEA1E0HAP8bgMqj4bKQozKztDi4lbrGBQ8ZZZntt0z44pIpS7OyhZYEweuqw_zw64";
+// VAPID Public Key - Generated on 2026-01-10
+// Matching private key must be configured in Cloudflare Worker
+export const VAPID_PUBLIC_KEY = "BN2g6Yo2cLIvAIGDwOCwNid4Z1gG-OS6vCLnYO8BU1CAiRq5Nf6yWZQ-6ENLejcFmHqtyTDX0HdWJunf_R3e7Pk";
 
 export const notificationService = {
   async registerServiceWorker() {
@@ -37,11 +37,6 @@ export const notificationService = {
 
       if (!subscription) {
         // Subscribe new
-        if (VAPID_PUBLIC_KEY === "TO_BE_REPLACED_BY_USER") {
-          console.warn("⚠️ Cannot subscribe: Missing VAPID Public Key");
-          return;
-        }
-
         const convertedVapidKey = this.urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
 
         subscription = await registration.pushManager.subscribe({
@@ -95,9 +90,9 @@ export const notificationService = {
 
       if (subscriptions.length === 0) return;
 
-      const WORKER_URL = "https://barberbook-push.ditnum01.workers.dev";
+      const WORKER_URL = "https://barberbook-push.ditmun01.workers.dev";
 
-      const promises = subscriptions.map(sub =>
+      const promises = subscriptions.map((sub: any) =>
         fetch(WORKER_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
