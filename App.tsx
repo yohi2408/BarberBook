@@ -9,7 +9,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { Auth } from './components/Auth';
 import { Toast } from './components/Toast';
 import { InstallPWA } from './components/InstallPWA';
-import { Loader2, Bell, Smartphone, ShieldCheck, ShieldAlert, RefreshCw } from 'lucide-react';
+import { Loader2, Smartphone, ShieldCheck, ShieldAlert, RefreshCw, Info } from 'lucide-react';
 import { Button } from './components/Button';
 
 function App() {
@@ -33,19 +33,21 @@ function App() {
   useEffect(() => {
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
     setIsPWA(!!isStandalone);
-    addLog(isStandalone ? 'מצב PWA: פעיל' : 'מצב: דפדפן (התראות מוגבלות)');
+    addLog(isStandalone ? 'מצב PWA: פעיל ✅' : 'מצב: דפדפן (התראות חסומות באייפון) ⚠️');
     
     if (typeof Notification !== 'undefined') {
       setNotifPermission(Notification.permission);
+      addLog(`הרשאת התראות נוכחית: ${Notification.permission}`);
     }
   }, []);
 
   useEffect(() => {
     if (!user) return;
-    return storageService.onNotificationReceived((notif) => {
-      addLog(`התקבל שידור: ${notif.title}`);
+    const unsubscribe = storageService.onNotificationReceived((notif) => {
+      addLog(`התקבל עדכון שרת: ${notif.title}`);
       notificationService.sendLocalNotification(notif.title, notif.body);
     });
+    return () => unsubscribe();
   }, [user]);
 
   useEffect(() => {
@@ -64,28 +66,27 @@ function App() {
       
       if (Notification.permission === 'granted') {
         const reg = await notificationService.registerServiceWorker();
-        if (reg) addLog('SW מוכן בגרסה v7');
+        if (reg) addLog('Service Worker v8 רשום ומוכן.');
       }
     };
     init();
   }, []);
 
   const forceUpdateSW = async () => {
-    addLog('מנסה לרענן Service Worker...');
+    addLog('מנקה Service Workers ישנים...');
     const registrations = await navigator.serviceWorker.getRegistrations();
     for(let registration of registrations) {
       await registration.unregister();
     }
+    addLog('נרשם מחדש...');
     await notificationService.registerServiceWorker();
-    addLog('SW חודש. אנא רענן את האפליקציה.');
-    showToast('הגדרות עודכנו', 'אנא פתח מחדש את האפליקציה');
+    window.location.reload();
   };
 
   const showToast = (message: string, subMessage: string = '') => {
     setToast({ visible: true, message, subMessage });
   };
 
-  // Added handleLogin to fix error: Cannot find name 'handleLogin'
   const handleLogin = (loggedUser: User) => {
     setUser(loggedUser);
     const loadData = async () => {
@@ -99,7 +100,6 @@ function App() {
     loadData();
   };
 
-  // Added handleLogout to fix error: Cannot find name 'handleLogout'
   const handleLogout = () => {
     storageService.logout();
     setUser(null);
@@ -141,33 +141,41 @@ function App() {
   };
 
   const requestNotif = async () => {
+    addLog('מבקש הרשאה...');
     const granted = await notificationService.requestPermission();
     if (granted) {
       setNotifPermission('granted');
-      addLog('הרשאה אושרה!');
+      addLog('הרשאה אושרה ע"י המשתמש.');
       showToast('התראות הופעלו');
     } else {
-      addLog('הרשאה נדחתה');
+      addLog('הרשאה נדחתה ע"י המשתמש או המערכת.');
     }
   };
 
   const testNotif = async () => {
     if (notifPermission !== 'granted') {
-      showToast('אין הרשאה');
+      showToast('אין הרשאה', 'לחץ על כפתור הפעל');
       return;
     }
 
-    addLog('בדיקה: שולח התראה מיידית + מושהית (4 שניות)');
+    addLog('שולח התראת בדיקה מיידית...');
+    const sent = await notificationService.sendLocalNotification(
+      'התראה עובדת! 💈', 
+      'אם אתה רואה את זה, הכל תקין.'
+    );
     
-    // 1. Immediate
-    notificationService.sendLocalNotification('בדיקה מיידית 🔔', 'אם אתה רואה את זה, המערכת מחוברת.');
-    
-    // 2. Delayed
-    setTimeout(() => {
-        notificationService.sendLocalNotification('בדיקת רקע 🚀', 'זה אמור להופיע גם אם יצאת.', 0);
-    }, 4000);
+    if (sent) {
+        addLog('הפקודה נשלחה בהצלחה למערכת.');
+        showToast('התראה נשלחה!');
+    } else {
+        addLog('שגיאה בשליחת ההתראה.');
+    }
 
-    showToast('נשלחו 2 בדיקות', 'צא למסך הבית עכשיו!');
+    // Delayed test
+    setTimeout(() => {
+        addLog('שולח התראת רקע מושהית...');
+        notificationService.sendLocalNotification('בדיקת רקע הצליחה! 🚀', 'ההתראות עובדות גם מחוץ לאפליקציה.');
+    }, 5000);
   };
 
   if (loading) {
@@ -188,8 +196,8 @@ function App() {
                   {notifPermission === 'granted' ? <ShieldCheck size={20} /> : <ShieldAlert size={20} />}
                 </div>
                 <div className="flex-1">
-                   <h4 className="text-sm font-bold text-white">{notifPermission === 'granted' ? 'מערכת התראות פעילה' : 'התראות כבויות'}</h4>
-                   <p className="text-[11px] text-gray-400">{notifPermission === 'granted' ? 'תקבל עדכון על תורים פנויים' : 'יש לאשר הרשאה'}</p>
+                   <h4 className="text-sm font-bold text-white">{notifPermission === 'granted' ? 'מערכת התראות מוגדרת' : 'התראות כבויות'}</h4>
+                   <p className="text-[11px] text-gray-400">{notifPermission === 'granted' ? 'ממתין לעדכונים מהשרת' : 'חובה לאשר כדי לקבל עדכונים'}</p>
                 </div>
                 {notifPermission !== 'granted' ? (
                   <Button onClick={requestNotif} variant="primary" className="!py-1.5 !px-3 !text-xs">הפעל</Button>
@@ -199,6 +207,12 @@ function App() {
                   </Button>
                 )}
              </div>
+             {!isPWA && (
+               <div className="mt-3 p-2 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-2">
+                  <Info size={14} className="text-red-500 shrink-0" />
+                  <p className="text-[10px] text-red-200">שים לב: באייפון התראות עובדות רק לאחר "הוספה למסך הבית".</p>
+               </div>
+             )}
         </div>
 
         {user.role === UserRole.CLIENT ? (
@@ -209,13 +223,13 @@ function App() {
 
         <div className="mt-10 p-4 bg-black/80 rounded-xl border border-white/5">
             <div className="flex justify-between items-center mb-4">
-                <h5 className="text-[10px] text-gray-500 font-mono uppercase tracking-widest">Logs & Maintenance</h5>
-                <button onClick={forceUpdateSW} className="text-gray-500 hover:text-white flex items-center gap-1 text-[10px] bg-white/5 px-2 py-1 rounded">
-                    <RefreshCw size={10} /> אפס SW
+                <h5 className="text-[10px] text-gray-500 font-mono uppercase tracking-widest">Logs & Status</h5>
+                <button onClick={forceUpdateSW} className="text-gray-400 hover:text-white flex items-center gap-1 text-[10px] bg-white/5 px-2 py-1 rounded border border-white/10">
+                    <RefreshCw size={10} /> רענון גרסה (v8)
                 </button>
             </div>
-            <pre className="text-[9px] text-gray-400 font-mono whitespace-pre-wrap leading-tight h-40 overflow-y-auto">
-              {debugLog || 'ממתין לפעולה...'}
+            <pre className="text-[9px] text-gray-400 font-mono whitespace-pre-wrap leading-tight h-44 overflow-y-auto">
+              {debugLog || 'ממתין...'}
             </pre>
         </div>
       </main>
