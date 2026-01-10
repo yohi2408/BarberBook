@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Appointment, BusinessSettings, TimeRange, DEFAULT_SETTINGS, Service, DaySchedule } from '../types';
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, addMonths, subMonths } from 'date-fns';
 import he from 'date-fns/locale/he';
-import { Trash2, Calendar, Settings, X, Archive, History, Scissors, ChevronRight, ChevronLeft, Check, Terminal, Wifi, BellRing, Plus, Clock } from 'lucide-react';
+import { Trash2, Calendar, Settings, X, Archive, History, Scissors, ChevronRight, ChevronLeft, Check, Terminal, Wifi, BellRing, Plus, Clock, Info, Smartphone } from 'lucide-react';
 import { Button } from './Button';
 import { notificationService } from '../services/notificationService';
 
@@ -29,7 +29,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'appointments' | 'settings' | 'services' | 'debug'>('appointments');
   const [showHistory, setShowHistory] = useState(false);
-  const [swStatus, setSwStatus] = useState<any>({ permission: 'טוען...', state: 'טוען...' });
+  const [swStatus, setSwStatus] = useState<any>({ permission: 'טוען...', state: 'טוען...', isStandalone: false });
   
   const [tempSettings, setTempSettings] = useState<BusinessSettings>(settings);
   const [saving, setSaving] = useState(false);
@@ -101,15 +101,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const testNotif = async () => {
       const success = await notificationService.sendLocalNotification('בדיקת מערכת', 'אם אתה רואה את זה, ההתראות בטלפון עובדות!');
       if (success) onShowToast('התראה נשלחה למכשיר זה');
-      else onShowToast('שגיאה בשליחת התראה', 'בדוק הרשאות בהגדרות הדפדפן');
+      else onShowToast('שגיאה בשליחת התראה', 'בדוק אם האפליקציה מותקנת על מסך הבית');
       refreshStatus();
   };
 
   const handleResetSW = async () => {
       await notificationService.unregisterAll();
       await notificationService.registerServiceWorker();
-      onShowToast('מערכת אותחלה', 'רענן את הדף כעת');
-      refreshStatus();
+      onShowToast('מערכת אותחלה', 'מנסה לרשום מחדש...');
+      setTimeout(refreshStatus, 1500);
   };
 
   const handleDateClick = (day: Date) => setSelectedDateStr(format(day, 'yyyy-MM-dd'));
@@ -169,6 +169,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const selectedDayConfig = getDayConfig(selectedDateStr);
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
   return (
     <div className="animate-in fade-in duration-500">
@@ -193,6 +194,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <h3 className="text-white font-bold mb-4 flex items-center gap-2">
                       <Wifi size={18} className="text-blue-400" /> מצב מערכת התראות
                   </h3>
+                  
+                  {isIOS && !swStatus.isStandalone && (
+                      <div className="mb-6 p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-start gap-3">
+                          <Smartphone size={20} className="text-amber-500 shrink-0 mt-1" />
+                          <div className="text-right">
+                              <p className="text-amber-200 text-xs font-bold">שים לב: אתה משתמש ב-iPhone</p>
+                              <p className="text-[10px] text-amber-300/80 leading-relaxed mt-1">
+                                  באייפון, התראות יעבדו <b>רק</b> אם תוסיף את האפליקציה למסך הבית:<br/>
+                                  לחץ על כפתור השיתוף (מרובע עם חץ) ואז על <b>"הוסף למסך הבית"</b>.
+                              </p>
+                          </div>
+                      </div>
+                  )}
+
                   <div className="space-y-3 bg-black/40 p-4 rounded-2xl border border-white/5 font-mono text-[11px]">
                       <div className="flex justify-between">
                           <span className="text-gray-500">הרשאות דפדפן:</span>
@@ -202,29 +217,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                       <div className="flex justify-between">
                           <span className="text-gray-500">Service Worker:</span>
-                          <span className="text-blue-400">{swStatus.state}</span>
+                          <span className={swStatus.state === 'פעיל' ? 'text-green-400 font-bold' : 'text-blue-400 font-bold'}>{swStatus.state}</span>
                       </div>
-                      <div className="flex justify-between overflow-hidden">
-                          <span className="text-gray-500">Scope:</span>
-                          <span className="text-gray-400 text-[9px] truncate ml-2">{swStatus.scope || 'N/A'}</span>
+                      <div className="flex justify-between">
+                          <span className="text-gray-500">מצב התקנה:</span>
+                          <span className={swStatus.isStandalone ? 'text-green-400 font-bold' : 'text-gray-400'}>{swStatus.isStandalone ? 'מותקן במסך הבית' : 'רץ בדפדפן'}</span>
                       </div>
                   </div>
+
                   <div className="grid grid-cols-1 gap-3 mt-6">
+                      <Button onClick={handleResetSW} variant="primary" className="text-xs">
+                         נסה רישום ידני של המערכת
+                      </Button>
                       <Button onClick={testNotif} variant="outline" className="text-xs">
                           <BellRing size={14} /> שלח התראת בדיקה
-                      </Button>
-                      <Button onClick={handleResetSW} variant="ghost" className="text-xs text-red-400 bg-red-400/5">
-                          אפס רישום התראות (למקרה של תקלה)
                       </Button>
                       <Button onClick={() => window.location.reload()} variant="ghost" className="text-xs text-gray-500">
                           רענן אפליקציה
                       </Button>
                   </div>
-                  {swStatus.permission === 'denied' && (
-                      <p className="mt-4 text-[10px] text-red-300 bg-red-500/10 p-3 rounded-xl border border-red-500/20 leading-relaxed text-center">
-                          שים לב: ההרשאות חסומות בהגדרות הטלפון/דפדפן.<br/>יש להיכנס להגדרות האתר (לחיצה על המנעול ליד הכתובת) ולאפשר התראות.
-                      </p>
-                  )}
               </div>
           </div>
       )}

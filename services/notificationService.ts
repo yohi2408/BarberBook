@@ -1,29 +1,29 @@
 
 export const notificationService = {
   getSWPath() {
-    // If we're on GitHub Pages, the path is always /BarberBook/sw.js
-    if (window.location.hostname.includes('github.io')) {
-      return '/BarberBook/sw.js';
-    }
-    // Local development
-    return '/sw.js';
+    // Correct path for GitHub Pages subfolder
+    const isGH = window.location.hostname.includes('github.io');
+    return isGH ? '/BarberBook/sw.js' : '/sw.js';
   },
 
   getScope() {
-    return window.location.hostname.includes('github.io') ? '/BarberBook/' : '/';
+    const isGH = window.location.hostname.includes('github.io');
+    return isGH ? '/BarberBook/' : '/';
   },
 
   async getStatus() {
-    if (!('serviceWorker' in navigator)) return { permission: 'No SW Support', state: 'No SW Support' };
-    if (!('Notification' in window)) return { permission: 'No Notif Support', state: 'No Notif Support' };
+    if (!('serviceWorker' in navigator)) return { permission: 'אין תמיכה ב-SW', state: 'אין תמיכה' };
+    if (!('Notification' in window)) return { permission: 'אין תמיכה בהתראות', state: 'אין תמיכה' };
     
     const scope = this.getScope();
     const registration = await navigator.serviceWorker.getRegistration(scope);
+    const isStandalone = (window.navigator as any).standalone || window.matchMedia('(display-mode: standalone)').matches;
     
     return {
       permission: Notification.permission,
       state: registration ? (registration.active ? 'פעיל' : (registration.installing ? 'בהתקנה' : 'לא פעיל')) : 'לא מותקן',
-      scope: registration?.scope || 'N/A'
+      scope: registration?.scope || 'N/A',
+      isStandalone
     };
   },
 
@@ -33,6 +33,7 @@ export const notificationService = {
           for (let registration of registrations) {
               await registration.unregister();
           }
+          console.log("All Service Workers unregistered");
       }
   },
 
@@ -52,23 +53,17 @@ export const notificationService = {
       const swPath = this.getSWPath();
       const scope = this.getScope();
       
-      console.log(`Attempting SW registration: Path=${swPath}, Scope=${scope}`);
-      const registration = await navigator.serviceWorker.register(swPath, { scope });
+      console.log(`Registering Service Worker: ${swPath} (Scope: ${scope})`);
       
-      registration.onupdatefound = () => {
-        const installingWorker = registration.installing;
-        if (installingWorker) {
-          installingWorker.onstatechange = () => {
-            if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              console.log('SW update installed.');
-            }
-          };
-        }
-      };
+      // CRITICAL FOR IPHONE: Since sw.js uses 'import', we MUST specify type: 'module'
+      const registration = await navigator.serviceWorker.register(swPath, { 
+        scope: scope,
+        type: 'module' 
+      });
       
       return registration;
     } catch (error) {
-      console.error('Service Worker Registration Error:', error);
+      console.error('Service Worker Registration Failed:', error);
       return null;
     }
   },
