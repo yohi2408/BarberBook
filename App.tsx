@@ -11,7 +11,6 @@ import { Toast } from './components/Toast';
 import { InstallPWA } from './components/InstallPWA';
 import { Loader2, ShieldCheck, ShieldAlert, AlertCircle } from 'lucide-react';
 import { Button } from './components/Button';
-import { format, addDays } from 'date-fns';
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -25,31 +24,42 @@ function App() {
   const [toast, setToast] = useState({ visible: false, message: '', subMessage: '' });
   const processedNotifs = useRef<Set<string>>(new Set());
 
-  // Heartbeat to keep SW alive
+  // Heartbeat to keep SW alive (Every 15 seconds)
   useEffect(() => {
-    const heartbeat = setInterval(() => {
-        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-            navigator.serviceWorker.controller.postMessage({ type: 'PING' });
-        }
-    }, 20000);
-    return () => clearInterval(heartbeat);
+    const sendPing = () => {
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'PING' });
+      }
+    };
+
+    const heartbeat = setInterval(sendPing, 15000);
+    
+    // Also ping when visibility changes (locking/unlocking)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden' || document.visibilityState === 'visible') {
+        sendPing();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      clearInterval(heartbeat);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, []);
 
   // Real-time synchronization
   useEffect(() => {
     if (!user) return;
 
-    // Listen to appointments live
     const unsubAppts = storageService.subscribeToAppointments((data) => {
       setAppointments(data);
     });
 
-    // Listen to settings/calendar live
     const unsubSettings = storageService.subscribeToSettings((data) => {
       setSettings(data);
     });
 
-    // Listen to broadcasts
     const unsubNotifs = storageService.onNotificationReceived((notif) => {
       if (processedNotifs.current.has(notif.id)) return;
       processedNotifs.current.add(notif.id);
