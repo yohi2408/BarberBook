@@ -1,6 +1,5 @@
-
-import { initializeApp } from "firebase/app";
-import { getMessaging, onBackgroundMessage } from "firebase/messaging/sw";
+importScripts('https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.8.1/firebase-messaging-compat.js');
 
 // Firebase App Config
 const firebaseConfig = {
@@ -12,8 +11,8 @@ const firebaseConfig = {
   appId: "1:84211314484:web:1b22c1c62fb7d08b06bf61"
 };
 
-const app = initializeApp(firebaseConfig);
-const messaging = getMessaging(app);
+firebase.initializeApp(firebaseConfig);
+const messaging = firebase.messaging();
 
 // Duplicate Prevention Cache
 const notificationCache = new Set();
@@ -30,14 +29,14 @@ function isDuplicate(id) {
 }
 
 // Background Message Handler
-onBackgroundMessage(messaging, (payload) => {
-  console.log('[firebase-messaging-sw.js] Received background message ', payload);
+messaging.onBackgroundMessage((payload) => {
+  console.log('[sw.js] Received background message ', payload);
 
   const notificationTitle = payload.notification?.title || 'BarberBook';
   const notificationOptions = {
     body: payload.notification?.body,
     icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-    badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png', // Android small icon
+    badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
     data: payload.data,
     tag: payload.messageId || 'barber-notification', // Replace tag to prevent stacking/duplication if needed
     renotify: true,

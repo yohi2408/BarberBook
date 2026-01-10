@@ -10,7 +10,7 @@ export const messagingService = {
     try {
       // VAPID key from Firebase Console
       // TODO: Replace with your actual "Key pair" from Firebase Console -> Project Settings -> Cloud Messaging
-      const vapidKey = 'REPLACE_WITH_YOUR_PUBLIC_KEY_STARTING_WITH_B';
+      const vapidKey = 'BHyEngvxDkCvUtt088CM4c_I-fqXqpcxo8vvY5zAygwbAkYqsBgi6FrJ3jXiYG43la_QExyNKU5yX--4Kt_71oE';
 
       const currentToken = await getToken(messaging as any, {
         vapidKey: vapidKey

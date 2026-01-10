@@ -57,8 +57,7 @@ export const notificationService = {
 
       // CRITICAL FOR IPHONE: Since sw.js uses 'import', we MUST specify type: 'module'
       const registration = await navigator.serviceWorker.register(swPath, {
-        scope: scope,
-        type: 'module'
+        scope: scope
       });
 
       return registration;
