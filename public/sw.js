@@ -1,5 +1,5 @@
 
-// Service Worker for BarberBook Pro - v20 (Anti-Duplicate & Background Optimized)
+// Service Worker for BarberBook Pro - v21 (Locked Screen Persistence)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, collection, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
@@ -19,64 +19,66 @@ const sessionStart = Date.now();
 let lastNotifId = null;
 let unsub = null;
 
-async function shouldShowNotification() {
-    // Check if any client (window/tab) is currently open and focused
+async function isAppVisible() {
     const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const isAnyClientVisible = clientList.some(client => client.visibilityState === 'visible');
-    // If the app is visible, return false (we don't want to show a system notification)
-    return !isAnyClientVisible;
+    return clientList.some(client => client.visibilityState === 'visible');
 }
 
 function startBackgroundListener() {
-    if (unsub) unsub();
+    if (unsub) {
+        try { unsub(); } catch (e) {}
+    }
     
-    console.log("SW: Monitoring for background notifications...");
+    console.log("SW: background listener started");
     const q = query(
       collection(db, 'broadcast_notifications'),
       orderBy('createdAt', 'desc'),
       limit(1)
     );
 
-    unsub = onSnapshot(q, async (snapshot) => {
-      for (const change of snapshot.docChanges()) {
-        if (change.type === "added") {
-          const data = change.doc.data();
-          const docId = change.doc.id;
-          
-          // Only process if it's new
-          if (data.createdAt && data.createdAt > sessionStart && docId !== lastNotifId) {
-            lastNotifId = docId;
-            
-            // CRITICAL: Only show system notification if the app is NOT visible
-            const showSystemNotif = await shouldShowNotification();
-            
-            if (showSystemNotif) {
-                const options = {
-                  body: data.body,
-                  icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-                  badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-                  tag: 'barber-notif',
-                  renotify: true,
-                  vibrate: [300, 100, 300],
-                  data: { url: '/BarberBook/' },
-                  requireInteraction: true
-                };
-                self.registration.showNotification(data.title, options);
-            } else {
-                console.log("SW: App is visible, skipping system notification to avoid duplication.");
+    unsub = onSnapshot(q, (snapshot) => {
+      // Use waitUntil to tell the OS we are doing important work
+      // This helps keep the SW alive a bit longer even when locked
+      const processChanges = async () => {
+          for (const change of snapshot.docChanges()) {
+            if (change.type === "added") {
+              const data = change.doc.data();
+              const docId = change.doc.id;
+              
+              if (data.createdAt && data.createdAt > sessionStart && docId !== lastNotifId) {
+                lastNotifId = docId;
+                
+                // Only show system notification if app is closed/locked
+                const visible = await isAppVisible();
+                
+                if (!visible) {
+                    await self.registration.showNotification(data.title, {
+                      body: data.body,
+                      icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+                      badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+                      tag: 'barber-notif',
+                      renotify: true,
+                      vibrate: [300, 100, 300],
+                      data: { url: '/BarberBook/' },
+                      requireInteraction: true
+                    });
+                }
+              }
             }
           }
-        }
-      }
+      };
+      
+      // We don't have an 'event' object here in onSnapshot, 
+      // but we execute the async process immediately.
+      processChanges();
+
     }, (error) => {
-        console.error("SW: Background sync lost. Retrying...", error);
-        setTimeout(startBackgroundListener, 10000);
+        console.error("SW: Connection lost, retrying in 5s...", error);
+        setTimeout(startBackgroundListener, 5000);
     });
 }
 
-// Start listener
-startBackgroundListener();
-
+// Initialization
 self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
@@ -85,10 +87,17 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     Promise.all([
       self.clients.claim(),
-      // Ensure listener is active on activation
       startBackgroundListener()
     ])
   );
+});
+
+// The 'fetch' event is sometimes triggered by OS to check if SW is alive
+// We use it as a trigger to make sure our listener is still running
+self.addEventListener('fetch', (event) => {
+    if (!unsub) {
+        startBackgroundListener();
+    }
 });
 
 self.addEventListener('notificationclick', (event) => {
@@ -103,9 +112,7 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-// Periodic keep-alive (iOS might ignore this, but good for Android)
+// Attempt to wake up on periodic sync if supported
 self.addEventListener('periodicsync', (event) => {
-    if (event.tag === 'keep-alive') {
-        startBackgroundListener();
-    }
+    event.waitUntil(startBackgroundListener());
 });
