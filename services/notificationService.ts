@@ -1,36 +1,25 @@
 
+import { storageService } from './storageService';
+
+// REPLACE THIS WITH YOUR GENERATED PUBLIC KEY FROM https://vapidkeys.com/
+// example: "BB1...x9s"
+export const VAPID_PUBLIC_KEY = "BOHBh_-nkX9y5veEKGdqszaEA1E0HAP8bgMqj4bKQozKztDi4lbrGBQ8ZZZntt0z44pIpS7OyhZYEweuqw_zw64";
+
 export const notificationService = {
-  // Get the base path dynamically from the current location
-  getBasePath() {
-    const path = window.location.pathname;
-    // If we are on GitHub Pages (e.g., /BarberBook/...), extract the base
-    if (path.includes('/BarberBook/')) {
-      return '/BarberBook/';
-    }
-    return '/';
-  },
-
-  async getStatus() {
-    if (!('serviceWorker' in navigator)) return { permission: 'אין תמיכה ב-SW', state: 'אין תמיכה' };
-    if (!('Notification' in window)) return { permission: 'אין תמיכה בהתראות', state: 'אין תמיכה' };
-
-    // Use getRegistration without arguments to avoid origin mismatch errors in preview environments
-    const registration = await navigator.serviceWorker.getRegistration();
-    const isStandalone = (window.navigator as any).standalone || window.matchMedia('(display-mode: standalone)').matches;
-
-    return {
-      permission: Notification.permission,
-      state: registration ? (registration.active ? 'פעיל' : (registration.installing ? 'בהתקנה' : 'לא פעיל')) : 'לא מותקן',
-      scope: registration?.scope || 'N/A',
-      isStandalone
-    };
-  },
-
-  async unregisterAll() {
+  async registerServiceWorker() {
     if ('serviceWorker' in navigator) {
-      const registrations = await navigator.serviceWorker.getRegistrations();
-      for (let registration of registrations) {
-        await registration.unregister();
+      try {
+        const registration = await navigator.serviceWorker.register('/BarberBook/sw.js', {
+          scope: '/BarberBook/'
+        });
+        console.log('✅ Service Worker registered with scope:', registration.scope);
+
+        // After registration, try to subscribe
+        await this.subscribeToPush(registration);
+
+        return registration;
+      } catch (error) {
+        console.error('❌ Service Worker registration failed:', error);
       }
     }
   },
@@ -38,60 +27,92 @@ export const notificationService = {
   async requestPermission() {
     if (!('Notification' in window)) return false;
     const permission = await Notification.requestPermission();
-    if (permission === 'granted') {
-      await this.unregisterAll();
-      await this.registerServiceWorker();
-      return true;
-    }
-    return false;
+    return permission === 'granted';
   },
 
-  async registerServiceWorker() {
-    if (!('serviceWorker' in navigator)) return null;
+  async subscribeToPush(registration: ServiceWorkerRegistration) {
     try {
-      // Get the base path dynamically (works for both local and GitHub Pages)
-      const basePath = this.getBasePath();
-      const swUrl = `${basePath}sw.js`;
+      // Check if already subscribed
+      let subscription = await registration.pushManager.getSubscription();
 
-      const registration = await navigator.serviceWorker.register(swUrl, {
-        type: 'module',
-        scope: basePath
-      });
+      if (!subscription) {
+        // Subscribe new
+        if (VAPID_PUBLIC_KEY === "TO_BE_REPLACED_BY_USER") {
+          console.warn("⚠️ Cannot subscribe: Missing VAPID Public Key");
+          return;
+        }
 
-      if (registration.installing) {
-        registration.installing.addEventListener('statechange', (e: any) => {
-          if (e.target.state === 'installed') {
-            console.log('SW Installed successfully');
-          }
+        const convertedVapidKey = this.urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: convertedVapidKey
         });
+        console.log('✅ Subscribed to Web Push!');
       }
 
-      await registration.update();
-      return registration;
+      // Save to Firestore
+      const currentUser = storageService.getCurrentUser();
+      await storageService.savePushSubscription(subscription, currentUser?.id || null);
+
     } catch (error) {
-      console.error('Service Worker Registration Failed:', error);
-      return null;
+      console.error('Push subscription failed:', error);
     }
   },
 
-  async sendLocalNotification(title: string, body: string) {
-    if (Notification.permission !== 'granted') return false;
+  // Helper function to convert VAPID key
+  urlBase64ToUint8Array(base64String: string) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+      .replace(/\-/g, '+')
+      .replace(/\_/g, '/');
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  },
+
+  async sendWelcomeNotification() {
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'SHOW_NOTIFICATION',
+        title: 'BarberBook',
+        body: 'ברוך הבא! ההתראות פעילות.'
+      });
+    }
+  },
+
+  // Trigger Push Notification via Cloudflare Worker
+  async sendPushToAll(title: string, body: string) {
     try {
-      const registration = await navigator.serviceWorker.getRegistration();
-      if (registration && registration.active) {
-        registration.showNotification(title, {
-          body,
-          tag: 'barber-alert',
-          icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-          badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-          vibrate: [200, 100, 200],
-          requireInteraction: true
-        } as any);
-        return true;
-      }
-      return false;
-    } catch (e) {
-      return false;
+      // 1. Get all subscriptions from Firestore
+      const subscriptions = await storageService.getAllSubscriptions();
+      console.log(`📡 Sending push to ${subscriptions.length} subscribers...`);
+
+      if (subscriptions.length === 0) return;
+
+      const WORKER_URL = "https://barberbook-push.ditnum01.workers.dev";
+
+      const promises = subscriptions.map(sub =>
+        fetch(WORKER_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            subscription: sub,
+            payload: { title, body }
+          })
+        }).catch(err => console.error("Push failed for one sub", err))
+      );
+
+      await Promise.all(promises);
+      console.log("✅ Push sent to all subscribers!");
+
+    } catch (error) {
+      console.error("❌ Error sending push:", error);
     }
   }
 };

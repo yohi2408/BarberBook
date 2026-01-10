@@ -75,12 +75,37 @@ export const storageService = {
 
   async broadcastNotification(title: string, body: string, type: 'slot_opened' | 'general' = 'slot_opened') {
     try {
+      // 1. Save to database
       await addDoc(collection(db, NOTIFICATIONS_COLLECTION), {
         title,
         body,
         type,
         createdAt: Date.now()
       });
+
+      // 2. Trigger Push Notifications (Direct to Cloudflare Worker)
+      console.log("🚀 Triggering Push via Cloudflare...");
+      const WORKER_URL = "https://barberbook-push.ditnum01.workers.dev";
+
+      // Get all subscriptions
+      const q = query(collection(db, 'push_subscriptions'));
+      const snapshot = await getDocs(q);
+      const subscriptions = snapshot.docs.map(doc => doc.data());
+
+      if (subscriptions.length > 0) {
+        // Send requests
+        subscriptions.map(sub =>
+          fetch(WORKER_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              subscription: sub,
+              payload: { title, body }
+            })
+          }).catch(e => console.error("Push failed for sub", e))
+        );
+      }
+
     } catch (e) {
       console.error("Error broadcasting notification:", e);
     }
