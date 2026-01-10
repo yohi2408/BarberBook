@@ -1,7 +1,7 @@
 
-// Service Worker for BarberBook Pro - v35 (Firestore + Wake-up mechanism)
+// Service Worker for BarberBook Pro - v36 (Hybrid: onSnapshot + Polling)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, query, orderBy, limit, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBCcuOSS7cOqLU9XaATlpCBS5kgdKJ-_fA",
@@ -16,6 +16,7 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 let unsubscribe = null;
+let pollingInterval = null;
 let lastCheckedTimestamp = Date.now();
 const processedNotifications = new Set();
 
@@ -24,7 +25,7 @@ async function showNotification(docId, data) {
     return;
   }
 
-  const cache = await caches.open('notif-v35');
+  const cache = await caches.open('notif-v36');
   const alreadySent = await cache.match(docId);
   if (alreadySent) return;
 
@@ -46,12 +47,13 @@ async function showNotification(docId, data) {
   console.log('✅ Notification shown:', data.title);
 }
 
+// Real-time listener (works when app is open)
 function initListener() {
   if (unsubscribe) {
     try { unsubscribe(); } catch (e) { }
   }
 
-  console.log('🔔 Initializing listener...');
+  console.log('🔔 Starting real-time listener...');
 
   const q = query(
     collection(db, 'broadcast_notifications'),
@@ -60,7 +62,7 @@ function initListener() {
   );
 
   unsubscribe = onSnapshot(q, (snapshot) => {
-    console.log('📨 Snapshot received');
+    console.log('📨 Real-time update received');
 
     snapshot.docChanges().forEach((change) => {
       if (change.type === "added") {
@@ -69,7 +71,7 @@ function initListener() {
         const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
 
         if (data.createdAt > tenMinutesAgo && data.createdAt > lastCheckedTimestamp) {
-          console.log('New notification:', data.title);
+          console.log('🆕 New notification (real-time):', data.title);
           showNotification(doc.id, data);
         }
       }
@@ -77,9 +79,51 @@ function initListener() {
 
     lastCheckedTimestamp = Date.now();
   }, (err) => {
-    console.error("❌ Listener error, retrying...", err);
+    console.error("❌ Listener error:", err);
     setTimeout(initListener, 5000);
   });
+}
+
+// Polling fallback (works when app is closed/locked)
+async function checkForNewNotifications() {
+  try {
+    console.log('🔍 Polling for notifications...');
+
+    const q = query(
+      collection(db, 'broadcast_notifications'),
+      orderBy('createdAt', 'desc'),
+      limit(3)
+    );
+
+    const snapshot = await getDocs(q);
+    const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
+
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+
+      if (data.createdAt > tenMinutesAgo && data.createdAt > lastCheckedTimestamp) {
+        console.log('🆕 New notification (polling):', data.title);
+        showNotification(doc.id, data);
+      }
+    });
+
+    lastCheckedTimestamp = Date.now();
+  } catch (error) {
+    console.error('❌ Polling error:', error);
+  }
+}
+
+function startPolling() {
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+  }
+
+  // Poll every 1 minute
+  pollingInterval = setInterval(() => {
+    checkForNewNotifications();
+  }, 60 * 1000); // 1 minute
+
+  console.log('⏰ Polling started (every 1 minute)');
 }
 
 self.addEventListener('install', (event) => {
@@ -94,26 +138,39 @@ self.addEventListener('activate', (event) => {
       self.clients.claim(),
       caches.keys().then(keys => {
         return Promise.all(
-          keys.filter(key => key.startsWith('notif-') && key !== 'notif-v35')
+          keys.filter(key => key.startsWith('notif-') && key !== 'notif-v36')
             .map(key => caches.delete(key))
         );
       })
     ]).then(() => {
+      // Start both mechanisms
       initListener();
+      startPolling();
+      // Do an immediate check
+      checkForNewNotifications();
     })
   );
 });
 
 self.addEventListener('fetch', (event) => {
+  // Ensure both mechanisms are running
   if (!unsubscribe) {
     initListener();
+  }
+  if (!pollingInterval) {
+    startPolling();
   }
 });
 
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'PING') {
-    console.log('🏓 PING - restarting listener');
-    initListener();
+    console.log('🏓 PING received');
+    // Restart listener
+    if (!unsubscribe) {
+      initListener();
+    }
+    // Do an immediate check
+    checkForNewNotifications();
     event.ports[0]?.postMessage({ status: 'alive' });
   }
 });
@@ -131,4 +188,4 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-console.log('🚀 Service Worker ready!');
+console.log('🚀 Service Worker ready (Hybrid mode: Real-time + Polling)!');
