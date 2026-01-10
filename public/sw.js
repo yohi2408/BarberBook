@@ -1,5 +1,5 @@
 
-// Service Worker for BarberBook Pro - v19 (Anti-Duplicate & Auto-Resume)
+// Service Worker for BarberBook Pro - v20 (Anti-Duplicate & Background Optimized)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, collection, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
@@ -19,49 +19,62 @@ const sessionStart = Date.now();
 let lastNotifId = null;
 let unsub = null;
 
+async function shouldShowNotification() {
+    // Check if any client (window/tab) is currently open and focused
+    const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const isAnyClientVisible = clientList.some(client => client.visibilityState === 'visible');
+    // If the app is visible, return false (we don't want to show a system notification)
+    return !isAnyClientVisible;
+}
+
 function startBackgroundListener() {
-    if (unsub) {
-        console.log("SW: Closing previous listener...");
-        unsub();
-    }
+    if (unsub) unsub();
     
-    console.log("SW: Starting Persistent Background Listener...");
+    console.log("SW: Monitoring for background notifications...");
     const q = query(
       collection(db, 'broadcast_notifications'),
       orderBy('createdAt', 'desc'),
       limit(1)
     );
 
-    unsub = onSnapshot(q, (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
+    unsub = onSnapshot(q, async (snapshot) => {
+      for (const change of snapshot.docChanges()) {
         if (change.type === "added") {
           const data = change.doc.data();
           const docId = change.doc.id;
           
-          // Only show if it's new for this session AND not the last one we showed
+          // Only process if it's new
           if (data.createdAt && data.createdAt > sessionStart && docId !== lastNotifId) {
             lastNotifId = docId;
-            const options = {
-              body: data.body,
-              icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-              badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-              tag: 'barber-notif', // Static tag prevents multiple popups from piling up
-              renotify: false, // Don't buzz twice if another notif comes while one is visible
-              vibrate: [300, 100, 300],
-              data: { url: '/BarberBook/' },
-              requireInteraction: true
-            };
-            self.registration.showNotification(data.title, options);
+            
+            // CRITICAL: Only show system notification if the app is NOT visible
+            const showSystemNotif = await shouldShowNotification();
+            
+            if (showSystemNotif) {
+                const options = {
+                  body: data.body,
+                  icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+                  badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+                  tag: 'barber-notif',
+                  renotify: true,
+                  vibrate: [300, 100, 300],
+                  data: { url: '/BarberBook/' },
+                  requireInteraction: true
+                };
+                self.registration.showNotification(data.title, options);
+            } else {
+                console.log("SW: App is visible, skipping system notification to avoid duplication.");
+            }
           }
         }
-      });
+      }
     }, (error) => {
-        console.error("SW: Listener Error. Reconnecting in 5s...", error);
-        setTimeout(startBackgroundListener, 5000);
+        console.error("SW: Background sync lost. Retrying...", error);
+        setTimeout(startBackgroundListener, 10000);
     });
 }
 
-// Start immediately on load
+// Start listener
 startBackgroundListener();
 
 self.addEventListener('install', (event) => {
@@ -72,6 +85,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     Promise.all([
       self.clients.claim(),
+      // Ensure listener is active on activation
       startBackgroundListener()
     ])
   );
@@ -87,4 +101,11 @@ self.addEventListener('notificationclick', (event) => {
       if (clients.openWindow) return clients.openWindow('/BarberBook/');
     })
   );
+});
+
+// Periodic keep-alive (iOS might ignore this, but good for Android)
+self.addEventListener('periodicsync', (event) => {
+    if (event.tag === 'keep-alive') {
+        startBackgroundListener();
+    }
 });

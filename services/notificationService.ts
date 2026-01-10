@@ -1,7 +1,6 @@
 
 export const notificationService = {
   getSWPath() {
-    // Correct path for GitHub Pages subfolder
     const isGH = window.location.hostname.includes('github.io');
     return isGH ? '/BarberBook/sw.js' : '/sw.js';
   },
@@ -33,7 +32,6 @@ export const notificationService = {
           for (let registration of registrations) {
               await registration.unregister();
           }
-          console.log("All Service Workers unregistered");
       }
   },
 
@@ -53,13 +51,13 @@ export const notificationService = {
       const swPath = this.getSWPath();
       const scope = this.getScope();
       
-      console.log(`Registering Service Worker: ${swPath} (Scope: ${scope})`);
-      
-      // CRITICAL FOR IPHONE: Since sw.js uses 'import', we MUST specify type: 'module'
       const registration = await navigator.serviceWorker.register(swPath, { 
         scope: scope,
         type: 'module' 
       });
+
+      // Force update to make sure we have the latest version
+      await registration.update();
       
       return registration;
     } catch (error) {
@@ -76,17 +74,15 @@ export const notificationService = {
       if (registration && registration.active) {
         registration.showNotification(title, {
           body,
-          tag: 'barber-' + Date.now(),
+          tag: 'test-notif',
           icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
           badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-          vibrate: [200, 100, 200],
-          requireInteraction: true
+          vibrate: [200, 100, 200]
         } as any);
         return true;
       }
       return false;
     } catch (e) {
-      console.error('Notification Error:', e);
       return false;
     }
   }
