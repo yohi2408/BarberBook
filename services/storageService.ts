@@ -107,7 +107,7 @@ export const storageService = {
     }
   },
 
-  async saveFcmToken(token: string, userId: string | null) {
+  async saveFcmToken(token: string, userId: string | null, phoneNumber: string | null = null) {
     try {
       // Check if token exists
       const q = query(collection(db, 'fcm_tokens'), where('token', '==', token));
@@ -116,6 +116,7 @@ export const storageService = {
       const data = {
         token,
         userId,
+        phoneNumber, // Added for direct mapping
         updatedAt: Date.now(),
         platform: 'web',
         userAgent: navigator.userAgent

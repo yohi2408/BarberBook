@@ -67,7 +67,7 @@ function App() {
         await notificationService.registerServiceWorker();
         // Request/Refresh FCM token
         if (currentUser) {
-          await messagingService.requestAndSaveToken(currentUser.id);
+          await messagingService.requestAndSaveToken(currentUser.id, currentUser.phoneNumber);
         }
       }
     };
