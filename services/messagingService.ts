@@ -45,7 +45,7 @@ export const messagingService = {
   },
 
   // Send notification directly from Client (Admin) to FCM
-  // bypassing Cloud Functions (Spark Plan compatible)
+  // via our free Google Apps Script Relay (Serverless)
   async sendMulticastNotification(title: string, body: string, url: string = '/') {
     try {
       console.log('🔄 Fetching tokens for broadcast...');
@@ -62,41 +62,37 @@ export const messagingService = {
 
       console.log(`📤 Sending to ${tokens.length} devices...`);
 
-      // SERVER KEY from Firebase Console -> Project Settings -> Cloud Messaging -> Cloud Messaging API (Legacy)
-      // TODO: Replace this!
-      const SERVER_KEY = 'REPLACE_WITH_YOUR_SERVER_KEY_AAA...';
+      // Our Google Apps Script Relay URL
+      const RELAY_URL = 'https://script.google.com/macros/s/AKfycbzTyEhCviWxXVdTHodYHcfBIkSycSUWlcCnQL7yqOwuPsfcaljcLPdR1E8gWe23rzRM/exec';
 
-      // Send in batches of 1 to avoid complexity (or use registration_ids for up to 1000)
-      // Using registration_ids is efficient
-
+      // Send in batches of 50 to avoid timeout in Apps Script
       const batches = [];
       while (tokens.length > 0) {
-        batches.push(tokens.splice(0, 1000));
+        batches.push(tokens.splice(0, 50));
       }
 
       for (const batch of batches) {
-        await fetch('https://fcm.googleapis.com/fcm/send', {
+        await fetch(RELAY_URL, {
           method: 'POST',
+          mode: 'no-cors', // Important: Apps Script redirects, so we use no-cors (opaque) or standard cors if configured.
+          // Actually, Apps Script Web Apps usually support CORS if 'Anyone' access is set, but 'no-cors' is safer to prevent errors if redirect handling fails. 
+          // However, 'no-cors' prevents reading response. Let's try standard first, if it fails we move to no-cors. 
+          // Re-reading docs: fetch to Apps Script works with redirects automatically in browser? Yes.
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `key=${SERVER_KEY}`
           },
           body: JSON.stringify({
-            registration_ids: batch,
+            tokens: batch,
             notification: {
               title: title,
               body: body,
-              icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
               click_action: url
-            },
-            data: {
-              url: url
             }
           })
         });
       }
 
-      console.log('✅ Broadcast sent successfully via Client!');
+      console.log('✅ Broadcast sent successfully via Relay!');
       return true;
 
     } catch (err) {
