@@ -1,17 +1,24 @@
 
 export const notificationService = {
   getSWPath() {
-    // Dynamically resolve SW path for local vs production
-    const base = window.location.pathname.includes('/BarberBook/') ? '/BarberBook/' : '/';
-    return `${base}sw.js`;
+    // If we're on GitHub Pages, the path is always /BarberBook/sw.js
+    if (window.location.hostname.includes('github.io')) {
+      return '/BarberBook/sw.js';
+    }
+    // Local development
+    return '/sw.js';
+  },
+
+  getScope() {
+    return window.location.hostname.includes('github.io') ? '/BarberBook/' : '/';
   },
 
   async getStatus() {
     if (!('serviceWorker' in navigator)) return { permission: 'No SW Support', state: 'No SW Support' };
     if (!('Notification' in window)) return { permission: 'No Notif Support', state: 'No Notif Support' };
     
-    const base = window.location.pathname.includes('/BarberBook/') ? '/BarberBook/' : '/';
-    const registration = await navigator.serviceWorker.getRegistration(base);
+    const scope = this.getScope();
+    const registration = await navigator.serviceWorker.getRegistration(scope);
     
     return {
       permission: Notification.permission,
@@ -43,9 +50,9 @@ export const notificationService = {
     if (!('serviceWorker' in navigator)) return null;
     try {
       const swPath = this.getSWPath();
-      const scope = window.location.pathname.includes('/BarberBook/') ? '/BarberBook/' : '/';
+      const scope = this.getScope();
       
-      console.log(`Registering SW at ${swPath} with scope ${scope}`);
+      console.log(`Attempting SW registration: Path=${swPath}, Scope=${scope}`);
       const registration = await navigator.serviceWorker.register(swPath, { scope });
       
       registration.onupdatefound = () => {
@@ -53,7 +60,7 @@ export const notificationService = {
         if (installingWorker) {
           installingWorker.onstatechange = () => {
             if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              console.log('New content available');
+              console.log('SW update installed.');
             }
           };
         }
@@ -61,7 +68,7 @@ export const notificationService = {
       
       return registration;
     } catch (error) {
-      console.error('SW Registration Error:', error);
+      console.error('Service Worker Registration Error:', error);
       return null;
     }
   },
@@ -69,8 +76,8 @@ export const notificationService = {
   async sendLocalNotification(title: string, body: string) {
     if (Notification.permission !== 'granted') return false;
     try {
-      const base = window.location.pathname.includes('/BarberBook/') ? '/BarberBook/' : '/';
-      const registration = await navigator.serviceWorker.getRegistration(base);
+      const scope = this.getScope();
+      const registration = await navigator.serviceWorker.getRegistration(scope);
       if (registration && registration.active) {
         registration.showNotification(title, {
           body,
@@ -84,7 +91,7 @@ export const notificationService = {
       }
       return false;
     } catch (e) {
-      console.error('Notification Service Error:', e);
+      console.error('Notification Error:', e);
       return false;
     }
   }
