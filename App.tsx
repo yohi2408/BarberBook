@@ -9,7 +9,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { Auth } from './components/Auth';
 import { Toast } from './components/Toast';
 import { InstallPWA } from './components/InstallPWA';
-import { Loader2, Bell, Smartphone, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Loader2, Bell, Smartphone, ShieldCheck, ShieldAlert, RefreshCw } from 'lucide-react';
 import { Button } from './components/Button';
 
 function App() {
@@ -27,17 +27,14 @@ function App() {
 
   const addLog = (msg: string) => {
     console.log(msg);
-    setDebugLog(prev => `${new Date().toLocaleTimeString()}: ${msg}\n${prev}`.slice(0, 800));
+    setDebugLog(prev => `${new Date().toLocaleTimeString()}: ${msg}\n${prev}`.slice(0, 1000));
   };
 
   useEffect(() => {
-    const checkPWA = () => {
-      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
-      setIsPWA(!!isStandalone);
-      addLog(isStandalone ? 'מצב: אפליקציה מותקנת (PWA)' : 'מצב: דפדפן רגיל (התראות לא יעבדו ברקע)');
-    };
-    checkPWA();
-
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
+    setIsPWA(!!isStandalone);
+    addLog(isStandalone ? 'מצב PWA: פעיל' : 'מצב: דפדפן (התראות מוגבלות)');
+    
     if (typeof Notification !== 'undefined') {
       setNotifPermission(Notification.permission);
     }
@@ -45,17 +42,10 @@ function App() {
 
   useEffect(() => {
     if (!user) return;
-
-    const unsubscribe = storageService.onNotificationReceived((notif) => {
-      const lastNotifId = sessionStorage.getItem('last_notif_id');
-      if (lastNotifId === notif.id) return;
-      sessionStorage.setItem('last_notif_id', notif.id);
-      
-      addLog(`התקבל עדכון: ${notif.title}`);
+    return storageService.onNotificationReceived((notif) => {
+      addLog(`התקבל שידור: ${notif.title}`);
       notificationService.sendLocalNotification(notif.title, notif.body);
     });
-
-    return () => unsubscribe();
   }, [user]);
 
   useEffect(() => {
@@ -73,33 +63,47 @@ function App() {
       setLoading(false);
       
       if (Notification.permission === 'granted') {
-        notificationService.registerServiceWorker().then(reg => {
-          if (reg) addLog('Service Worker רשום ומוכן לפעולה');
-        });
+        const reg = await notificationService.registerServiceWorker();
+        if (reg) addLog('SW מוכן בגרסה v7');
       }
     };
     init();
   }, []);
 
+  const forceUpdateSW = async () => {
+    addLog('מנסה לרענן Service Worker...');
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    for(let registration of registrations) {
+      await registration.unregister();
+    }
+    await notificationService.registerServiceWorker();
+    addLog('SW חודש. אנא רענן את האפליקציה.');
+    showToast('הגדרות עודכנו', 'אנא פתח מחדש את האפליקציה');
+  };
+
   const showToast = (message: string, subMessage: string = '') => {
     setToast({ visible: true, message, subMessage });
   };
 
-  const handleLogin = async (loggedInUser: User) => {
-    setLoading(true);
-    setUser(loggedInUser);
-    const [appts, sets] = await Promise.all([
-      storageService.getAppointments(),
-      storageService.getSettings()
-    ]);
-    setAppointments(appts);
-    setSettings(sets);
-    setLoading(false);
+  // Added handleLogin to fix error: Cannot find name 'handleLogin'
+  const handleLogin = (loggedUser: User) => {
+    setUser(loggedUser);
+    const loadData = async () => {
+      const [appts, sets] = await Promise.all([
+        storageService.getAppointments(),
+        storageService.getSettings()
+      ]);
+      setAppointments(appts);
+      setSettings(sets);
+    };
+    loadData();
   };
 
+  // Added handleLogout to fix error: Cannot find name 'handleLogout'
   const handleLogout = () => {
     storageService.logout();
     setUser(null);
+    setAppointments([]);
   };
 
   const handleBooking = async (appointment: Appointment): Promise<boolean> => {
@@ -137,58 +141,44 @@ function App() {
   };
 
   const requestNotif = async () => {
-    addLog('מבקש הרשאת התראות מהמשתמש...');
     const granted = await notificationService.requestPermission();
     if (granted) {
       setNotifPermission('granted');
       addLog('הרשאה אושרה!');
-      showToast('התראות הופעלו בהצלחה!');
+      showToast('התראות הופעלו');
     } else {
-      addLog('הרשאה נדחתה או נכשלה');
-      showToast('הרשאת התראות נדחתה', 'יש לאשר ידנית בהגדרות באייפון');
+      addLog('הרשאה נדחתה');
     }
   };
 
   const testNotif = async () => {
     if (notifPermission !== 'granted') {
-      showToast('חובה לאשר התראות קודם');
+      showToast('אין הרשאה');
       return;
     }
 
-    addLog('שולח פקודת התראה מושהית (3 שניות)...');
-    showToast('הבדיקה נשלחה!', 'צא למסך הבית תוך 3 שניות');
+    addLog('בדיקה: שולח התראה מיידית + מושהית (4 שניות)');
     
-    // Send to SW with delay
-    const sent = await notificationService.sendLocalNotification(
-      'בדיקה הצליחה! 💈', 
-      'ההתראות של BarberBook עובדות עכשיו גם ברקע.',
-      3000
-    );
+    // 1. Immediate
+    notificationService.sendLocalNotification('בדיקה מיידית 🔔', 'אם אתה רואה את זה, המערכת מחוברת.');
+    
+    // 2. Delayed
+    setTimeout(() => {
+        notificationService.sendLocalNotification('בדיקת רקע 🚀', 'זה אמור להופיע גם אם יצאת.', 0);
+    }, 4000);
 
-    if (!sent) addLog('שגיאה: ה-Service Worker לא הגיב');
+    showToast('נשלחו 2 בדיקות', 'צא למסך הבית עכשיו!');
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[#050505] flex items-center justify-center text-gold-500">
-        <Loader2 className="animate-spin" size={48} />
-      </div>
-    );
+    return <div className="min-h-screen bg-[#050505] flex items-center justify-center text-gold-500"><Loader2 className="animate-spin" size={48} /></div>;
   }
 
-  if (!user) {
-    return <Auth onLogin={handleLogin} />;
-  }
+  if (!user) return <Auth onLogin={handleLogin} />;
 
   return (
     <div className="min-h-screen pb-safe bg-[#050505]">
-      <Toast 
-        isVisible={toast.visible} 
-        message={toast.message} 
-        subMessage={toast.subMessage}
-        onClose={() => setToast(prev => ({ ...prev, visible: false }))} 
-      />
-
+      <Toast isVisible={toast.visible} message={toast.message} subMessage={toast.subMessage} onClose={() => setToast(prev => ({ ...prev, visible: false }))} />
       <Header user={user} onLogout={handleLogout} title={settings.shopName} />
       
       <main className="max-w-md mx-auto p-4 pt-2">
@@ -198,58 +188,37 @@ function App() {
                   {notifPermission === 'granted' ? <ShieldCheck size={20} /> : <ShieldAlert size={20} />}
                 </div>
                 <div className="flex-1">
-                   <h4 className="text-sm font-bold text-white">
-                     {notifPermission === 'granted' ? 'מערכת התראות מוגדרת' : 'התראות כבויות'}
-                   </h4>
-                   <p className="text-[11px] text-gray-400">
-                     {notifPermission === 'granted' 
-                        ? (isPWA ? 'הכל מוכן! תקבל עדכונים גם כשהאפליקציה סגורה' : 'שים לב: חובה להוסיף למסך הבית') 
-                        : 'לחץ על הכפתור כדי להפעיל'}
-                   </p>
+                   <h4 className="text-sm font-bold text-white">{notifPermission === 'granted' ? 'מערכת התראות פעילה' : 'התראות כבויות'}</h4>
+                   <p className="text-[11px] text-gray-400">{notifPermission === 'granted' ? 'תקבל עדכון על תורים פנויים' : 'יש לאשר הרשאה'}</p>
                 </div>
                 {notifPermission !== 'granted' ? (
                   <Button onClick={requestNotif} variant="primary" className="!py-1.5 !px-3 !text-xs">הפעל</Button>
                 ) : (
                   <Button onClick={testNotif} variant="outline" className="!py-1.5 !px-3 !text-xs flex items-center gap-1">
-                    <Smartphone size={12} />
-                    בדוק
+                    <Smartphone size={12} /> בדיקה
                   </Button>
                 )}
              </div>
         </div>
 
         {user.role === UserRole.CLIENT ? (
-          <ClientBooking 
-            user={user}
-            settings={settings}
-            existingAppointments={appointments}
-            onBook={handleBooking}
-            onShowToast={showToast}
-            onCancelAppointment={handleCancelAppointment}
-          />
+          <ClientBooking user={user} settings={settings} existingAppointments={appointments} onBook={handleBooking} onShowToast={showToast} onCancelAppointment={handleCancelAppointment} />
         ) : (
-          <AdminDashboard 
-            appointments={appointments}
-            settings={settings}
-            onCancelAppointment={handleCancelAppointment}
-            onUpdateSettings={handleUpdateSettings}
-          />
+          <AdminDashboard appointments={appointments} settings={settings} onCancelAppointment={handleCancelAppointment} onUpdateSettings={handleUpdateSettings} />
         )}
 
-        {/* Diagnostic Logs - Visible for you to tell me what's wrong if it fails */}
-        <div className="mt-10 p-4 bg-black/80 rounded-xl border border-white/5 overflow-hidden">
-            <div className="flex justify-between items-center mb-2">
-                <h5 className="text-[10px] text-gray-500 font-mono uppercase tracking-widest">Diagnostic Logs</h5>
-                <span className={`text-[8px] px-2 py-0.5 rounded-full ${isPWA ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
-                    {isPWA ? 'STANDALONE' : 'BROWSER'}
-                </span>
+        <div className="mt-10 p-4 bg-black/80 rounded-xl border border-white/5">
+            <div className="flex justify-between items-center mb-4">
+                <h5 className="text-[10px] text-gray-500 font-mono uppercase tracking-widest">Logs & Maintenance</h5>
+                <button onClick={forceUpdateSW} className="text-gray-500 hover:text-white flex items-center gap-1 text-[10px] bg-white/5 px-2 py-1 rounded">
+                    <RefreshCw size={10} /> אפס SW
+                </button>
             </div>
-            <pre className="text-[9px] text-gray-400 font-mono whitespace-pre-wrap leading-tight h-32 overflow-y-auto">
-              {debugLog || 'ממתין לפעולות...'}
+            <pre className="text-[9px] text-gray-400 font-mono whitespace-pre-wrap leading-tight h-40 overflow-y-auto">
+              {debugLog || 'ממתין לפעולה...'}
             </pre>
         </div>
       </main>
-      
       <InstallPWA />
     </div>
   );
