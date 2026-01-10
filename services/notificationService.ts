@@ -1,5 +1,19 @@
 
 export const notificationService = {
+  async getStatus() {
+    if (!('serviceWorker' in navigator)) return 'No SW Support';
+    if (!('Notification' in window)) return 'No Notification Support';
+    
+    const registration = await navigator.serviceWorker.getRegistration('/BarberBook/');
+    if (!registration) return 'Not Registered';
+    
+    return {
+      permission: Notification.permission,
+      state: registration.active ? 'Active' : (registration.installing ? 'Installing' : 'Inactive'),
+      scope: registration.scope
+    };
+  },
+
   async requestPermission() {
     if (!('Notification' in window)) return false;
     const permission = await Notification.requestPermission();
@@ -13,10 +27,23 @@ export const notificationService = {
   async registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return null;
     try {
-      // Register sw.js from the root (Vite serves public files at root)
-      const registration = await navigator.serviceWorker.register('./sw.js', {
-        scope: './'
+      // Use explicit path and scope for GitHub Pages
+      const registration = await navigator.serviceWorker.register('/BarberBook/sw.js', {
+        scope: '/BarberBook/'
       });
+      
+      // Force update if an update is available
+      registration.onupdatefound = () => {
+        const installingWorker = registration.installing;
+        if (installingWorker) {
+          installingWorker.onstatechange = () => {
+            if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              console.log('New SW content available; please refresh.');
+            }
+          };
+        }
+      };
+      
       return registration;
     } catch (error) {
       console.error('SW Registration Error:', error);
@@ -24,41 +51,23 @@ export const notificationService = {
     }
   },
 
-  async sendLocalNotification(title: string, body: string, delay: number = 0) {
+  async sendLocalNotification(title: string, body: string) {
     if (Notification.permission !== 'granted') return false;
-
     const tag = 'barber-' + Date.now();
-
     try {
-      const registration = await navigator.serviceWorker.ready;
-      
-      const trigger = () => {
-        // We only trigger via the Service Worker to avoid double notifications
-        // If the app is in the foreground, registration.showNotification works.
-        // If we want to ensure SW logic (vibration/icon), we can use postMessage.
-        if (registration.active) {
-          registration.active.postMessage({
-            type: 'SHOW_NOTIFICATION',
-            payload: { title, body, tag }
-          });
-        } else {
-          // Fix: Cast the options object to any to bypass strict type checking for the 'vibrate' property
-          // which might be missing in some TypeScript DOM library versions.
-          registration.showNotification(title, {
-            body,
-            tag,
-            icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
-            vibrate: [200, 100, 200]
-          } as any);
-        }
-      };
-
-      if (delay > 0) {
-        setTimeout(trigger, delay);
-      } else {
-        trigger();
+      const registration = await navigator.serviceWorker.getRegistration('/BarberBook/');
+      if (registration && registration.active) {
+        registration.showNotification(title, {
+          body,
+          tag,
+          icon: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+          badge: 'https://cdn-icons-png.flaticon.com/512/32/32441.png',
+          vibrate: [200, 100, 200],
+          requireInteraction: true
+        } as any);
+        return true;
       }
-      return true;
+      return false;
     } catch (e) {
       console.error('Notification Service Error:', e);
       return false;

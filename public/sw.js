@@ -1,5 +1,5 @@
 
-// Service Worker for BarberBook Pro - v17 (Fixed Icon & Persistent Listener)
+// Service Worker for BarberBook Pro - v18 (Persistent Listener Fix)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, collection, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
@@ -17,22 +17,27 @@ const db = getFirestore(app);
 
 const sessionStart = Date.now();
 let lastNotifId = null;
+let unsub = null;
 
 function startBackgroundListener() {
-    console.log("SW: Starting Background Listener...");
+    if (unsub) {
+        console.log("SW: Closing previous listener...");
+        unsub();
+    }
+    
+    console.log("SW: Starting Persistent Background Listener...");
     const q = query(
       collection(db, 'broadcast_notifications'),
       orderBy('createdAt', 'desc'),
       limit(1)
     );
 
-    return onSnapshot(q, (snapshot) => {
+    unsub = onSnapshot(q, (snapshot) => {
       snapshot.docChanges().forEach((change) => {
         if (change.type === "added") {
           const data = change.doc.data();
           const docId = change.doc.id;
           
-          // Check if this is a fresh notification and not a duplicate
           if (data.createdAt && data.createdAt > sessionStart && docId !== lastNotifId) {
             lastNotifId = docId;
             const options = {
@@ -50,11 +55,12 @@ function startBackgroundListener() {
         }
       });
     }, (error) => {
-        console.error("SW: Listener Error. Reconnecting...", error);
+        console.error("SW: Listener Error. Reconnecting in 3s...", error);
         setTimeout(startBackgroundListener, 3000);
     });
 }
 
+// Start immediately on load
 startBackgroundListener();
 
 self.addEventListener('install', (event) => {
@@ -65,7 +71,6 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     Promise.all([
       self.clients.claim(),
-      // Ensure listener is active on activation
       startBackgroundListener()
     ])
   );
@@ -76,16 +81,16 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
-        if ('focus' in client) return client.focus();
+        if (client.url.includes('/BarberBook/') && 'focus' in client) return client.focus();
       }
       if (clients.openWindow) return clients.openWindow('/BarberBook/');
     })
   );
 });
 
-// Wakeup mechanism
+// Message handler for debug
 self.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'PING') {
-        console.log("SW: Received Ping");
+        event.source.postMessage({ type: 'PONG', timestamp: Date.now() });
     }
 });
