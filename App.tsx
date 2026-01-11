@@ -191,17 +191,17 @@ function App() {
             </div>
           </div>
         )}
-    </div>
+
 
         {
-    user.role === UserRole.CLIENT ? (
-      <ClientBooking user={user} settings={settings} existingAppointments={appointments} onBook={handleBooking} onShowToast={showToast} onCancelAppointment={handleCancelAppointment} />
-    ) : (
-    <AdminDashboard appointments={appointments} settings={settings} onCancelAppointment={handleCancelAppointment} onUpdateSettings={handleUpdateSettings} onShowToast={showToast} />
-  )
-  }
+          user.role === UserRole.CLIENT ? (
+            <ClientBooking user={user} settings={settings} existingAppointments={appointments} onBook={handleBooking} onShowToast={showToast} onCancelAppointment={handleCancelAppointment} />
+          ) : (
+            <AdminDashboard appointments={appointments} settings={settings} onCancelAppointment={handleCancelAppointment} onUpdateSettings={handleUpdateSettings} onShowToast={showToast} />
+          )
+        }
       </main >
-    <InstallPWA />
+      <InstallPWA />
     </div >
   );
 }
