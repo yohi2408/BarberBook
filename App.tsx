@@ -89,7 +89,9 @@ function App() {
     setUser(loggedUser);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Remove token from server so this device stops receiving notifs for this user
+    await messagingService.deleteCurrentToken();
     storageService.logout();
     setUser(null);
     setAppointments([]);
