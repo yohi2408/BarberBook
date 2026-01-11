@@ -11,7 +11,7 @@ import { notificationService } from './notificationService';
 
 export const messagingService = {
   // Request FCM token and save it to Firestore
-  async requestAndSaveToken(userId?: string) {
+  async requestAndSaveToken(userId?: string, phoneNumber?: string) {
     try {
       // VAPID key from Firebase Console
       const vapidKey = 'BHyEngvxDkCvUtt088CM4c_I-fqXqpcxo8vvY5zAygwbAkYqsBgi6FrJ3jXiYG43la_QExyNKU5yX--4Kt_71oE';
@@ -31,7 +31,7 @@ export const messagingService = {
       });
 
       if (currentToken) {
-        await storageService.saveFcmToken(currentToken, userId || null);
+        await storageService.saveFcmToken(currentToken, userId || null, phoneNumber || null);
         console.log('✅ FCM token obtained and saved:', currentToken.substring(0, 20) + '...');
         return currentToken;
       } else {
