@@ -59,7 +59,14 @@ function App() {
     const init = async () => {
       const currentUser = storageService.getCurrentUser();
       if (currentUser) {
-        setUser(currentUser);
+        // Fix for old sessions: If phone number is missing, force re-login
+        if (!currentUser.phoneNumber && currentUser.role !== UserRole.ADMIN) {
+          console.log('⚠️ Stale session detected. Forcing logout.');
+          storageService.logout();
+          setUser(null);
+        } else {
+          setUser(currentUser);
+        }
       }
       setLoading(false);
 
