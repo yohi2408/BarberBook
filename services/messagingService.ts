@@ -128,11 +128,12 @@ export const messagingService = {
         vapidKey: 'BHyEngvxDkCvUtt088CM4c_I-fqXqpcxo8vvY5zAygwbAkYqsBgi6FrJ3jXiYG43la_QExyNKU5yX--4Kt_71oE'
       });
 
-      // 1. Remove from Firestore
-      await storageService.removeFcmToken(currentToken);
+      if (currentToken) {
+        // 1. Remove from Firestore
+        await storageService.removeFcmToken(currentToken);
+      }
+    } catch (err) {
+      console.error('Error deleting token:', err);
     }
-    } catch(err) {
-    console.error('Error deleting token:', err);
   }
-}
 };
