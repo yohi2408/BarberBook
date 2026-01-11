@@ -136,7 +136,7 @@ function App() {
     const granted = await notificationService.requestPermission();
     if (granted) {
       setNotifPermission('granted');
-      await messagingService.requestAndSaveToken(user?.id);
+      await messagingService.requestAndSaveToken(user?.id, user?.phoneNumber);
     }
   };
 
