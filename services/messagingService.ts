@@ -12,6 +12,7 @@ import { notificationService } from './notificationService';
 export const messagingService = {
   // Request FCM token and save it to Firestore
   async requestAndSaveToken(userId?: string, phoneNumber?: string) {
+    console.log('🔔 [messagingService] Requesting token with:', { userId, phoneNumber });
     try {
       // VAPID key from Firebase Console
       const vapidKey = 'BHyEngvxDkCvUtt088CM4c_I-fqXqpcxo8vvY5zAygwbAkYqsBgi6FrJ3jXiYG43la_QExyNKU5yX--4Kt_71oE';
