@@ -153,28 +153,12 @@ function App() {
 
       <main className="max-w-md mx-auto p-4 pt-2">
         <div className="mb-6 glass-panel p-4 rounded-2xl border-gold-500/30 shadow-lg">
-          <div
-            onClick={async () => {
-              if (notifPermission === 'granted' && user) {
-                showToast('מבצע סנכרון התראות...', 'נא להמתין...');
-                const token = await messagingService.requestAndSaveToken(user.id, user.phoneNumber);
-                if (token) {
-                  showToast('✅ סנכרון הושלם!', user.phoneNumber ? `מחובר לטלפון: ${user.phoneNumber}` : '⚠️ שים לב: אין מס\' טלפון מוגדר!');
-                } else {
-                  showToast('❌ שגיאה בסנכרון', 'נא לנסות שנית');
-                }
-              }
-            }}
-            className={`flex items-center gap-4 flex-1 cursor-pointer transition-opacity hover:opacity-80 active:scale-95`}
-          >
+          <div className="flex items-center gap-4">
             <div className={`w-10 h-10 rounded-full flex items-center justify-center border ${notifPermission === 'granted' ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-gold-500/10 text-gold-500 border-gold-500/20'}`}>
               {notifPermission === 'granted' ? <ShieldCheck size={20} /> : <ShieldAlert size={20} />}
             </div>
             <div className="flex-1">
-              <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                {notifPermission === 'granted' ? 'מערכת התראות פעילה' : 'התראות כבויות'}
-                {notifPermission === 'granted' && <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-gray-400 font-normal">לחץ לסנכרון</span>}
-              </h4>
+              <h4 className="text-sm font-bold text-white">{notifPermission === 'granted' ? 'מערכת התראות פעילה' : 'התראות כבויות'}</h4>
               <p className="text-[11px] text-gray-400">{notifPermission === 'granted' ? 'תקבל תזכורות ועדכונים על תורים פנויים' : 'יש להפעיל כדי לקבל תזכורות'}</p>
             </div>
           </div>

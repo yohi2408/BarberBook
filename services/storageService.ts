@@ -116,7 +116,7 @@ export const storageService = {
       const data = {
         token,
         userId,
-        phoneNumber, // Added for direct mapping
+        phoneNumber: phoneNumber ? phoneNumber.replace(/\D/g, '') : null, // Normalize: remove dashes/spaces
         updatedAt: Date.now(),
         platform: 'web',
         userAgent: navigator.userAgent
