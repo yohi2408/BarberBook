@@ -104,7 +104,7 @@ function App() {
       const formattedDate = dateObj.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' });
 
       const title = '🔥 התפנה תור חדש!';
-      const body = `התפנה תור ביום ${dayName} בתאריך ${formattedDate} בשעה ${apptToCancel.time}. רוצו לתפוס!`;
+      const body = `התפנה תור ל${dayName} בתאריך ${formattedDate} בשעה ${apptToCancel.time}. רוצו לתפוס!`;
 
       // 1. Keep history in DB
       await storageService.broadcastNotification(title, body);
