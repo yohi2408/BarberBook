@@ -4,19 +4,17 @@
 
 @layer base {
   body {
-    /* "Alive" Theme: Vibrant Indigo/Purple/Pink Gradient */
-    @apply bg-[#2e1065] text-gray-100 min-h-screen font-sans overflow-x-hidden;
+    /* "Titanium & Gold" Theme: Premium, Sharp, Masculine but Alive */
+    @apply bg-[#1a1b1e] text-gray-100 min-h-screen font-sans overflow-x-hidden;
     background-image:
-      radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.5) 0px, transparent 50%),
-      /* Violet */
-      radial-gradient(at 100% 0%, rgba(236, 72, 153, 0.4) 0px, transparent 50%),
-      /* Pink */
-      radial-gradient(at 100% 100%, rgba(99, 102, 241, 0.4) 0px, transparent 50%),
-      /* Indigo */
-      radial-gradient(at 0% 100%, rgba(168, 85, 247, 0.4) 0px, transparent 50%);
-    /* Purple */
-    background-color: #1e1b4b;
-    /* Fallback deep indigo */
+      radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.08) 0%, transparent 40%),
+      /* Sharp Blue Top Left */
+      radial-gradient(circle at 100% 0%, rgba(250, 204, 21, 0.05) 0%, transparent 40%),
+      /* Gold Top Right */
+      radial-gradient(circle at 50% 100%, rgba(56, 189, 248, 0.05) 0%, transparent 60%),
+      /* Blue Bottom */
+      linear-gradient(to bottom, #111827, #0f172a);
+    /* Metallic Dark Base */
     background-attachment: fixed;
   }
 }

@@ -12,7 +12,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ user, onLogout, title, unreadCount = 0 }) => {
   return (
-    <header className="sticky top-0 z-50 bg-[#050505]/80 backdrop-blur-xl border-b border-white/5 pb-4 safe-top px-4 mb-6 transition-all duration-300">
+    <header className="sticky top-0 z-50 bg-white/5 backdrop-blur-xl border-b border-white/5 pb-4 safe-top px-4 mb-6 transition-all duration-300">
       <div className="flex justify-between items-center max-w-md mx-auto pt-4">
         <div className="flex items-center gap-4">
           <div className="relative group cursor-default">
@@ -35,14 +35,14 @@ export const Header: React.FC<HeaderProps> = ({ user, onLogout, title, unreadCou
               <button className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-gray-400 hover:text-gold-500 transition-colors border border-white/5">
                 <Bell size={20} />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-[#050505]">
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-sm">
                     {unreadCount}
                   </span>
                 )}
               </button>
             </div>
           )}
-          <button 
+          <button
             onClick={onLogout}
             className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-gray-400 hover:text-red-500 transition-all border border-white/5 hover:bg-red-500/10"
             title="התנתק"

@@ -141,13 +141,13 @@ function App() {
   };
 
   if (loading) {
-    return <div className="min-h-screen bg-[#050505] flex items-center justify-center text-gold-500"><Loader2 className="animate-spin" size={48} /></div>;
+    return <div className="min-h-screen bg-transparent flex items-center justify-center text-gold-500"><Loader2 className="animate-spin" size={48} /></div>;
   }
 
   if (!user) return <Auth onLogin={handleLogin} />;
 
   return (
-    <div className="min-h-screen pb-safe bg-[#050505]">
+    <div className="min-h-screen pb-safe bg-transparent">
       <Toast isVisible={toast.visible} message={toast.message} subMessage={toast.subMessage} onClose={() => setToast(prev => ({ ...prev, visible: false }))} />
       <Header user={user} onLogout={handleLogout} title={settings.shopName} />
 
