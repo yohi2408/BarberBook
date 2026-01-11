@@ -133,10 +133,15 @@ function App() {
   };
 
   const requestNotif = async () => {
+    showToast('מבקש אישור התראות...', 'נא לאשר בחלונית הקופצת');
     const granted = await notificationService.requestPermission();
     if (granted) {
       setNotifPermission('granted');
       await messagingService.requestAndSaveToken(user?.id, user?.phoneNumber);
+      showToast('✅ התראות הופעלו בהצלחה!', 'מעכשיו תקבל עדכונים לטלפון');
+    } else {
+      setNotifPermission('denied');
+      showToast('❌ ההתראות לא אושרו', 'יש לאפשר בהגדרות הדפדפן');
     }
   };
 
@@ -161,10 +166,10 @@ function App() {
               <h4 className="text-sm font-bold text-white">{notifPermission === 'granted' ? 'מערכת התראות פעילה' : 'התראות כבויות'}</h4>
               <p className="text-[11px] text-gray-400">{notifPermission === 'granted' ? 'תקבל תזכורות ועדכונים על תורים פנויים' : 'יש להפעיל כדי לקבל תזכורות'}</p>
             </div>
+            {notifPermission !== 'granted' && (
+              <Button onClick={requestNotif} variant="primary" className="!py-1.5 !px-3 !text-xs">הפעל</Button>
+            )}
           </div>
-          {notifPermission !== 'granted' && (
-            <Button onClick={requestNotif} variant="primary" className="!py-1.5 !px-3 !text-xs">הפעל</Button>
-          )}
         </div>
         {notifPermission === 'denied' && (
           <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3">
