@@ -114,12 +114,16 @@ function App() {
   };
 
   const handleUpdateSettings = async (newSettings: BusinessSettings) => {
-    const oldDaysCount = Object.keys(settings.calendar || {}).filter(k => settings.calendar[k].isWorking).length;
-    const newDaysCount = Object.keys(newSettings.calendar || {}).filter(k => newSettings.calendar[k].isWorking).length;
+    // Check if any specific day was opened (turned to isWorking: true)
+    const hasNewOpenings = Object.keys(newSettings.calendar || {}).some(dateKey => {
+      const isNowWorking = newSettings.calendar[dateKey].isWorking;
+      const wasWorking = settings.calendar?.[dateKey]?.isWorking || false;
+      return isNowWorking && !wasWorking;
+    });
 
     await storageService.saveSettings(newSettings);
 
-    if (newDaysCount > oldDaysCount) {
+    if (hasNewOpenings) {
       const title = '✂️ תורים חדשים נפתחו!';
       const body = 'הספר פתח מועדים חדשים ביומן. היכנסו עכשיו לקבוע תור!';
 
