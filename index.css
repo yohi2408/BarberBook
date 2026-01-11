@@ -4,13 +4,19 @@
 
 @layer base {
   body {
-    /* New Vibrant Background: Deep Blue -> Purple -> Black */
-    @apply bg-[#0f172a] text-gray-100 min-h-screen font-sans overflow-x-hidden;
-    background-image: 
-      radial-gradient(circle at 0% 0%, rgba(59, 130, 246, 0.15) 0%, transparent 50%), /* Blue Top Left */
-      radial-gradient(circle at 100% 0%, rgba(147, 51, 234, 0.15) 0%, transparent 50%), /* Purple Top Right */
-      radial-gradient(circle at 50% 100%, rgba(212, 175, 55, 0.1) 0%, transparent 50%), /* Gold Bottom */
-      radial-gradient(circle at 50% 50%, rgba(15, 23, 42, 0.8) 0%, transparent 100%); /* Deep Mesh */
+    /* "Alive" Theme: Vibrant Indigo/Purple/Pink Gradient */
+    @apply bg-[#2e1065] text-gray-100 min-h-screen font-sans overflow-x-hidden;
+    background-image:
+      radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.5) 0px, transparent 50%),
+      /* Violet */
+      radial-gradient(at 100% 0%, rgba(236, 72, 153, 0.4) 0px, transparent 50%),
+      /* Pink */
+      radial-gradient(at 100% 100%, rgba(99, 102, 241, 0.4) 0px, transparent 50%),
+      /* Indigo */
+      radial-gradient(at 0% 100%, rgba(168, 85, 247, 0.4) 0px, transparent 50%);
+    /* Purple */
+    background-color: #1e1b4b;
+    /* Fallback deep indigo */
     background-attachment: fixed;
   }
 }
@@ -18,16 +24,16 @@
 @layer utilities {
   .glass {
     /* Lighter, glossier glass */
-    @apply bg-white/[0.07] backdrop-blur-xl border border-white/[0.1] shadow-[0_8px_32px_0_rgba(31,38,135,0.37)];
+    @apply bg-white/10 backdrop-blur-xl border border-white/20 shadow-[0_8px_32px_0_rgba(31, 38, 135, 0.37)];
   }
-  
+
   .glass-heavy {
-    @apply bg-[#0f172a]/80 backdrop-blur-2xl border border-white/[0.1] shadow-2xl;
+    @apply bg-[#0f172a]/90 backdrop-blur-2xl border border-white/20 shadow-2xl;
   }
 
   .glass-panel {
     /* Modern "Ice" effect */
-    @apply bg-gradient-to-br from-white/[0.08] to-white/[0.02] backdrop-blur-2xl border border-white/[0.08] shadow-2xl;
+    @apply bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-2xl border border-white/20 shadow-2xl;
   }
 
   .glass-input {
@@ -38,15 +44,15 @@
     /* Brighter, more alive gold */
     @apply bg-clip-text text-transparent bg-gradient-to-r from-[#FFD700] to-[#FFE5B4];
   }
-  
+
   .text-radiant-gradient {
-     @apply bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400;
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400;
   }
-  
+
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
-  
+
   .no-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
@@ -55,15 +61,31 @@
 
 /* Custom Animations */
 @keyframes float {
-  0% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
-  100% { transform: translateY(0px); }
+  0% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+
+  100% {
+    transform: translateY(0px);
+  }
 }
 
 @keyframes pulse-glow {
-  0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
-  70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+  0% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+  }
+
+  70% {
+    box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+  }
 }
 
 .animate-float {
@@ -76,6 +98,7 @@
 
 /* Selection Color */
 ::selection {
-  background: rgba(59, 130, 246, 0.5); /* Blue selection */
+  background: rgba(59, 130, 246, 0.5);
+  /* Blue selection */
   color: #fff;
 }
