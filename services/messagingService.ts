@@ -114,5 +114,26 @@ export const messagingService = {
       console.log('📨 Foreground message received:', payload);
       callback(payload);
     });
+  },
+
+  // Logout and clean up token
+  async deleteCurrentToken() {
+    try {
+      const scope = notificationService.getScope();
+      const registration = await navigator.serviceWorker.getRegistration(scope);
+      if (!registration) return;
+
+      const currentToken = await getToken(messaging as any, {
+        serviceWorkerRegistration: registration,
+        vapidKey: 'BHyEngvxDkCvUtt088CM4c_I-fqXqpcxo8vvY5zAygwbAkYqsBgi6FrJ3jXiYG43la_QExyNKU5yX--4Kt_71oE'
+      });
+
+      if (currentToken) {
+        // 1. Remove from Firestore
+        await storageService.deleteFcmToken(currentToken);
+      }
+    } catch (err) {
+      console.error('Error deleting token:', err);
+    }
   }
 };
